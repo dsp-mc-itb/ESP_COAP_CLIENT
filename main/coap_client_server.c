@@ -88,8 +88,8 @@ static coap_pdu_t *coap_new_request(coap_context_t *ctx,
                                     coap_optlist_t **options, uint8_t type,
                                     unsigned char *data, size_t length);
 void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_value);
-static void client_response_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_pdu_t *received, const coap_tid_t id);
-static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_tid_t id);
+static void client_response_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_pdu_t *received, const coap_mid_t id);
+static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_mid_t id);
 void camera_sensing_client();
 void coap_send_initial_data();
 void wifi_disconnect();
@@ -247,7 +247,7 @@ void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_v
 
 static void client_response_handler(coap_context_t *ctx, coap_session_t *session,
                                     coap_pdu_t *sent, coap_pdu_t *received,
-                                    const coap_tid_t id) {
+                                    const coap_mid_t id) {
     coap_pdu_t *pdu = NULL;
     coap_opt_t *control_opt;
     uint8_t control_opt_value;
@@ -256,7 +256,7 @@ static void client_response_handler(coap_context_t *ctx, coap_session_t *session
     unsigned char buf[4];
     size_t len;
     unsigned char *databuf;
-    coap_tid_t tid;
+    coap_mid_t tid;
 
     coap_block_missing_t missing_block_opt;
 
@@ -445,7 +445,7 @@ static void client_response_handler(coap_context_t *ctx, coap_session_t *session
     }
 }
 
-static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_tid_t id) {
+static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_mid_t id) {
     coap_log(LOG_NOTICE, "NACK trigger received, the reason is %d\n", reason);
     coap_opt_iterator_t opt_iter;
 

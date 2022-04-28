@@ -62,7 +62,6 @@ uint8_t first_time_connected;
 
 // Function initialization
 static esp_err_t wifi_event_handler(void* ctx, system_event_t* event);
-
 void get_global_config_from_nvs();
 void wifi_init();
 void time_sync_notification_cb(struct timeval* tv);
