@@ -62,6 +62,7 @@ uint8_t first_time_connected;
 
 // Function initialization
 static esp_err_t wifi_event_handler(void* ctx, system_event_t* event);
+
 void get_global_config_from_nvs();
 void wifi_init();
 void time_sync_notification_cb(struct timeval* tv);
@@ -93,7 +94,6 @@ void app_main(void) {
     }
 
     wifi_init();
-
     while (!is_connected) {
         vTaskDelay(1 * 1000 / portTICK_RATE_MS);
     }
@@ -131,66 +131,66 @@ static esp_err_t wifi_event_handler(void* ctx, system_event_t* event) {
             ip = got_ip.ip.addr;
 
             // Stop dhcps and modify access point IP address
-            ESP_LOGI(TAG, "modifying wifi mode and access point ip address!");
-            strlcpy((char*)ap_config.ap.ssid, ap_ssid, sizeof(ap_config.ap.ssid));
-            if (strlen(ap_passwd) < 8) {
-                ap_config.ap.authmode = WIFI_AUTH_OPEN;
-            } else {
-                strlcpy((char*)ap_config.ap.password, ap_passwd, sizeof(ap_config.ap.password));
-            }
+            // ESP_LOGI(TAG, "modifying wifi mode and access point ip address!");
+            // strlcpy((char*)ap_config.ap.ssid, ap_ssid, sizeof(ap_config.ap.ssid));
+            // if (strlen(ap_passwd) < 8) {
+            //     ap_config.ap.authmode = WIFI_AUTH_OPEN;
+            // } else {
+            //     strlcpy((char*)ap_config.ap.password, ap_passwd, sizeof(ap_config.ap.password));
+            // }
 
-            if (strlen(ssid) > 0) {
-                strlcpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-                strlcpy((char*)wifi_config.sta.password, passwd, sizeof(wifi_config.sta.password));
-                if (strlen((char*)bssid) > 0) {
-                    wifi_config.sta.bssid_set = true;
-                    memcpy(wifi_config.sta.bssid, bssid, sizeof(wifi_config.sta.bssid));
-                } else {
-                    wifi_config.sta.bssid_set = false;
-                }
-                ESP_LOGI(TAG, "wifi mode modified, wifi mode: APSTA");
-                ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-                ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-                ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));
-            } else {
-                ESP_LOGI(TAG, "wifi mode modified, wifi mode: AP");
-                ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-                ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));
-            }
+            // if (strlen(ssid) > 0) {
+            //     strlcpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+            //     strlcpy((char*)wifi_config.sta.password, passwd, sizeof(wifi_config.sta.password));
+            //     if (strlen((char*)bssid) > 0) {
+            //         wifi_config.sta.bssid_set = true;
+            //         memcpy(wifi_config.sta.bssid, bssid, sizeof(wifi_config.sta.bssid));
+            //     } else {
+            //         wifi_config.sta.bssid_set = false;
+            //     }
+            //     ESP_LOGI(TAG, "wifi mode modified, wifi mode: APSTA");
+            //     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+            //     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+            //     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));
+            // } else {
+            //     ESP_LOGI(TAG, "wifi mode modified, wifi mode: AP");
+            //     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+            //     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));
+            // }
 
-            // DHCPS CONFIG
-            ESP_LOGI(TAG, "Setting access point address and dhcps!");
-            esp_netif_ip_info_t ap_ip_info;
-            ap_ip_info.ip.addr = got_ip.ip.addr;
-            ap_ip_info.gw.addr = got_ip.ip.addr;
-            if ((htonl(got_ip.ip.addr) & 0xFFFFFF) < 255) {
-                // Node is root node
-                ap_ip_info.netmask.addr = got_ip.netmask.addr;
-            } else {
-                ap_ip_info.netmask.addr = htonl((int)htonl(got_ip.netmask.addr) >> 2);
-            }
+            // // DHCPS CONFIG
+            // ESP_LOGI(TAG, "Setting access point address and dhcps!");
+            // esp_netif_ip_info_t ap_ip_info;
+            // ap_ip_info.ip.addr = got_ip.ip.addr;
+            // ap_ip_info.gw.addr = got_ip.ip.addr;
+            // if ((htonl(got_ip.ip.addr) & 0xFFFFFF) < 255) {
+            //     // Node is root node
+            //     ap_ip_info.netmask.addr = got_ip.netmask.addr;
+            // } else {
+            //     ap_ip_info.netmask.addr = htonl((int)htonl(got_ip.netmask.addr) >> 2);
+            // }
 
-            uint32_t ip_temp;
-            dhcps_lease_t dhcps_lease;
-            ip_temp = htonl(ap_ip_info.ip.addr);
-            ip_temp = ip_temp + (1 << (32 - subnet_from_netmask(htonl(ap_ip_info.netmask.addr)) - 2));
-            dhcps_lease.start_ip.addr = htonl(ip_temp);
-            ip_temp = htonl(ap_ip_info.ip.addr);
-            ip_temp = (ip_temp | ~htonl(ap_ip_info.netmask.addr)) - 1;
-            dhcps_lease.end_ip.addr = htonl(ip_temp);
-            dhcps_lease.enable = true;
-            int lease_time = 10;
+            // // uint32_t ip_temp;
+            // // dhcps_lease_t dhcps_lease;
+            // // ip_temp = htonl(ap_ip_info.ip.addr);
+            // // ip_temp = ip_temp + (1 << (32 - subnet_from_netmask(htonl(ap_ip_info.netmask.addr)) - 2));
+            // // dhcps_lease.start_ip.addr = htonl(ip_temp);
+            // // ip_temp = htonl(ap_ip_info.ip.addr);
+            // // ip_temp = (ip_temp | ~htonl(ap_ip_info.netmask.addr)) - 1;
+            // // dhcps_lease.end_ip.addr = htonl(ip_temp);
+            // // dhcps_lease.enable = true;
+            // // int lease_time = 10;
 
-            esp_netif_dhcps_stop(wifiAP);  // stop before setting ip WifiAP
-            esp_netif_set_ip_info(wifiAP, &ap_ip_info);
-            ESP_ERROR_CHECK(esp_netif_dhcps_option(wifiAP, ESP_NETIF_OP_SET, ESP_NETIF_REQUESTED_IP_ADDRESS, &dhcps_lease, sizeof(dhcps_lease)));
-            ESP_ERROR_CHECK(esp_netif_dhcps_option(wifiAP, ESP_NETIF_OP_SET, ESP_NETIF_IP_ADDRESS_LEASE_TIME, &lease_time, sizeof(lease_time)));
-            esp_netif_dhcps_start(wifiAP);
-            ESP_LOGI(TAG, "access point address and dhcps setted! ip:" IPSTR " gw:" IPSTR " netmask:" IPSTR " dhcps-start-ip:" IPSTR " dhcps-end-ip:" IPSTR " lease-time:%ds", IP2STR(&ap_ip_info.ip), IP2STR(&ap_ip_info.gw), IP2STR(&ap_ip_info.netmask), IP2STR(&dhcps_lease.start_ip), IP2STR(&dhcps_lease.end_ip), lease_time);
-            if (!first_time_connected) {
-                coap_send_initial_data();
-            }
-            first_time_connected = 0;
+            // esp_netif_dhcps_stop(wifiAP);  // stop before setting ip WifiAP
+            // esp_netif_set_ip_info(wifiAP, &ap_ip_info);
+            // //ESP_ERROR_CHECK(esp_netif_dhcps_option(wifiAP, ESP_NETIF_OP_SET, ESP_NETIF_REQUESTED_IP_ADDRESS, &dhcps_lease, sizeof(dhcps_lease)));
+            // //ESP_ERROR_CHECK(esp_netif_dhcps_option(wifiAP, ESP_NETIF_OP_SET, ESP_NETIF_IP_ADDRESS_LEASE_TIME, &lease_time, sizeof(lease_time)));
+            // esp_netif_dhcps_start(wifiAP);
+            // //ESP_LOGI(TAG, "access point address and dhcps setted! ip:" IPSTR " gw:" IPSTR " netmask:" IPSTR " dhcps-start-ip:" IPSTR " dhcps-end-ip:" IPSTR " lease-time:%ds", IP2STR(&ap_ip_info.ip), IP2STR(&ap_ip_info.gw), IP2STR(&ap_ip_info.netmask), IP2STR(&dhcps_lease.start_ip), IP2STR(&dhcps_lease.end_ip), lease_time);
+            // if (!first_time_connected) {
+            //     coap_send_initial_data();
+            // }
+            // first_time_connected = 0;
             break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
             if (!first_time_connected) {

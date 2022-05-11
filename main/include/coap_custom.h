@@ -3,12 +3,12 @@
 
 #if 1
 /* Needed until coap_dtls.h becomes a part of libcoap proper */
-// #include "libcoap.h" deprecated
-// #include "coap_dtls.h" deprecated
+#include "libcoap.h"
+#include "coap_dtls.h"
 #include "freertos/FreeRTOS.h"
 #endif
 
-#include "coap3/coap.h"
+#include "coap.h"
 
 #ifndef min
 #define min(a, b) ((a) < (b) ? (a) : (b))

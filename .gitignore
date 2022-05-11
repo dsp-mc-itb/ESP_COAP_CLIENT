@@ -7,4 +7,3 @@ nircmd-x64/
 log.esp32_node.*.txt
 main/data_collection.h
 main/esp32_node.h
-components/esp32-camera

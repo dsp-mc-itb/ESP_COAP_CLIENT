@@ -16,9 +16,9 @@
 #include "esp_sntp.h"
 #include "nvs_flash.h"
 
-//#include "coap_dtls.h" deprecated
-// #include "coap.h" deprecated
-#include "coap3/coap.h"
+#include "libcoap.h"
+#include "coap_dtls.h"
+#include "coap.h"
 
 #include "coap_custom.h"
 #include "lib_nvs.h"
@@ -33,7 +33,8 @@ const static char *TAG = "CoAP_server_client";
 
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
 
-uint32_t local_server_ip = 0;
+//uint32_t local_server_ip = 2265032896;  /*192.168.1.135 */
+uint32_t local_server_ip = 118073536; /* 192.168.9.7*/
 
 int64_t send_duration = 0;
 
@@ -88,8 +89,8 @@ static coap_pdu_t *coap_new_request(coap_context_t *ctx,
                                     coap_optlist_t **options, uint8_t type,
                                     unsigned char *data, size_t length);
 void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_value);
-static void client_response_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_pdu_t *received, const coap_mid_t id);
-static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_mid_t id);
+static void client_response_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_pdu_t *received, const coap_tid_t id);
+static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_tid_t id);
 void camera_sensing_client();
 void coap_send_initial_data();
 void wifi_disconnect();
@@ -146,39 +147,39 @@ void coap_client_server(void *p) {
         coap_log(LOG_NOTICE, "udp: coap_new_endpoint() failed\n");
     }
 
-    controller_resource = coap_resource_init(coap_make_str_const(""), 0);
-    if (!controller_resource) {
-        coap_log(LOG_NOTICE, "coap_resource_init() failed\n");
-    }
-    coap_register_handler(controller_resource, COAP_REQUEST_PUT, hnd_espressif_put);
-    coap_register_handler(controller_resource, COAP_REQUEST_GET, hnd_espressif_get);
-    coap_add_resource(ctx, controller_resource);
+    // controller_resource = coap_resource_init(coap_make_str_const(""), 0);
+    // if (!controller_resource) {
+    //     coap_log(LOG_NOTICE, "coap_resource_init() failed\n");
+    // }
+    // coap_register_handler(controller_resource, COAP_REQUEST_PUT, hnd_espressif_put);
+    // coap_register_handler(controller_resource, COAP_REQUEST_GET, hnd_espressif_get);
+    // coap_add_resource(ctx, controller_resource);
 
     coap_register_response_handler(ctx, client_response_handler);
     coap_register_nack_handler(ctx, client_nack_handler);
 
     coap_log(LOG_NOTICE, "Sending initial data!\n");
-    coap_send_initial_data();
+    //coap_send_initial_data();
 
-    prepare_status_data_session(&session_status, &tick_status_data);
-    prepare_device_monitor_session(&session_device, &tick_device_monitor);
+    //prepare_status_data_session(&session_status, &tick_status_data);
+    //prepare_device_monitor_session(&session_device, &tick_device_monitor);
     prepare_image_session(&session_image, &tick_send_image);
 
     while (1) {
         if (is_connected) {
-            send_device_monitor(session_device, &tick_device_monitor);
+            //send_device_monitor(session_device, &tick_device_monitor);
             if (is_sensing_active) {
-                while (local_server_ip == 0) {
-                    coap_log(LOG_NOTICE, "local server ip is zero %d\n", local_server_ip);
-                    // sending_initial_data = 1;
-                    coap_send_initial_data();
-                    vTaskDelay(1000 / portTICK_RATE_MS);
-                }
+                // while (local_server_ip == 0) {
+                //     coap_log(LOG_NOTICE, "local server ip is zero %d\n", local_server_ip);
+                //     // sending_initial_data = 1;
+                //     coap_send_initial_data();
+                //     vTaskDelay(1000 / portTICK_RATE_MS);
+                // }
                 send_image(session_image, &tick_send_image);
             }
-            if (status_data_transfer_type) {
-                send_status_data(session_status, &tick_status_data);
-            }
+            // if (status_data_transfer_type) {
+            //     send_status_data(session_status, &tick_status_data);
+            // }
 
             coap_run_once(ctx, 10);
         } else {
@@ -247,7 +248,7 @@ void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_v
 
 static void client_response_handler(coap_context_t *ctx, coap_session_t *session,
                                     coap_pdu_t *sent, coap_pdu_t *received,
-                                    const coap_mid_t id) {
+                                    const coap_tid_t id) {
     coap_pdu_t *pdu = NULL;
     coap_opt_t *control_opt;
     uint8_t control_opt_value;
@@ -256,7 +257,7 @@ static void client_response_handler(coap_context_t *ctx, coap_session_t *session
     unsigned char buf[4];
     size_t len;
     unsigned char *databuf;
-    coap_mid_t tid;
+    coap_tid_t tid;
 
     coap_block_missing_t missing_block_opt;
 
@@ -445,7 +446,7 @@ static void client_response_handler(coap_context_t *ctx, coap_session_t *session
     }
 }
 
-static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_mid_t id) {
+static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_tid_t id) {
     coap_log(LOG_NOTICE, "NACK trigger received, the reason is %d\n", reason);
     coap_opt_iterator_t opt_iter;
 
