@@ -73,10 +73,13 @@ double average_free_heap = 0;
 int8_t rssi = 0;
 
 char *image_path = "image";
+char *tp_path = "troug";
 
 coap_session_t *session_status = NULL;
 coap_session_t *session_device = NULL;
 coap_session_t *session_image = NULL;
+
+coap_session_t *session_throughput_prediction = NULL;
 
 uint8_t nack_flag = 0;
 
@@ -102,6 +105,8 @@ int64_t tick_device_monitor = 0;
 int64_t tick_status_data = 0;
 int64_t tick_send_image = 0;
 
+int64_t tick_get_throughput_prediction = 0;
+
 void prepare_device_monitor_session(coap_session_t **session, int64_t *tick);
 void send_device_monitor(coap_session_t *session, int64_t *tick);
 void prepare_status_data_session(coap_session_t **session, int64_t *tick);
@@ -109,6 +114,9 @@ void send_status_data(coap_session_t *session, int64_t *tick);
 void prepare_image_session(coap_session_t **session, int64_t *tick);
 void send_image(coap_session_t *session, int64_t *tick);
 void send_image_continue(coap_session_t *session, int64_t *tick);
+
+void prepare_get_throughput_prediction(coap_session_t **session, int64_t *tick);
+void get_throughput_prediction(coap_session_t *session, int64_t *tick);
 
 void coap_client_server(void *p) {
     ESP_LOGI(TAG, "CoAP client running!");
@@ -165,6 +173,8 @@ void coap_client_server(void *p) {
     //prepare_device_monitor_session(&session_device, &tick_device_monitor);
     prepare_image_session(&session_image, &tick_send_image);
 
+    prepare_get_throughput_prediction(&session_throughput_prediction, &tick_get_throughput_prediction);
+
     while (1) {
         if (is_connected) {
             //send_device_monitor(session_device, &tick_device_monitor);
@@ -180,6 +190,7 @@ void coap_client_server(void *p) {
             // if (status_data_transfer_type) {
             //     send_status_data(session_status, &tick_status_data);
             // }
+            get_throughput_prediction(session_throughput_prediction,&tick_get_throughput_prediction);
 
             coap_run_once(ctx, 10);
         } else {
@@ -1202,3 +1213,35 @@ void send_image(coap_session_t *session, int64_t *tick) {
         }
     }
 }
+
+void prepare_get_throughput_prediction(coap_session_t **session, int64_t *tick) {
+    coap_address_t server_addr;
+
+    coap_address_init(&server_addr);
+    server_addr.addr.sin.sin_family = AF_INET;
+    server_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
+    server_addr.addr.sin.sin_addr.s_addr = local_server_ip;
+
+    *session = coap_new_client_session(ctx, NULL, &server_addr, COAP_PROTO_UDP);
+    if (!*session) {
+        coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
+        coap_session_release(*session);
+    }
+
+    *tick = esp_timer_get_time();
+}
+
+void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
+    coap_pdu_t *pdu = NULL;
+
+    if (esp_timer_get_time() - *tick > 5000000) {
+        *tick = esp_timer_get_time();
+       
+        pdu = coap_new_request(ctx, session, COAP_REQUEST_GET, NULL, COAP_MESSAGE_NON, NULL, 0);
+        coap_add_option(pdu, COAP_OPTION_URI_PATH, 5, (uint8_t *)tp_path);
+        coap_log(LOG_NOTICE, "GET T P!\n");
+        coap_send(session, pdu);
+
+    }
+}
+
