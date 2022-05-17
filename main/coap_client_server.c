@@ -34,7 +34,8 @@ const static char *TAG = "CoAP_server_client";
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
 
 //uint32_t local_server_ip = 2265032896;  /*192.168.1.135 */
-uint32_t local_server_ip = 118073536; /* 192.168.9.7*/
+uint32_t local_server_ip = 2499913920; /*192.168.1.149 */
+//uint32_t local_server_ip = 118073536; /* 192.168.9.7*/
 
 int64_t send_duration = 0;
 
