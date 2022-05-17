@@ -16,9 +16,10 @@
 #include "esp_sntp.h"
 #include "nvs_flash.h"
 
-#include "libcoap.h"
-#include "coap_dtls.h"
-#include "coap.h"
+//#include "libcoap.h"
+#include "coap3/coap.h"
+//#include "coap_dtls.h"
+//#include "coap.h"
 
 #include "coap_custom.h"
 #include "lib_nvs.h"
@@ -93,14 +94,16 @@ static coap_pdu_t *coap_new_request(coap_context_t *ctx,
                                     coap_optlist_t **options, uint8_t type,
                                     unsigned char *data, size_t length);
 void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_value);
-static void client_response_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_pdu_t *received, const coap_tid_t id);
-static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_tid_t id);
+static coap_response_t client_response_handler(coap_session_t *session,
+                                    const coap_pdu_t *sent, const coap_pdu_t *received,
+                                    const coap_mid_t id);
+static void client_nack_handler(coap_session_t *session,const coap_pdu_t *sent,const coap_nack_reason_t reason, const coap_mid_t id);
 void camera_sensing_client();
-void coap_send_initial_data();
+
 void wifi_disconnect();
-static void coap_check_execute_broadcast(coap_pdu_t *request);
-static void hnd_espressif_get(coap_context_t *ctx, coap_resource_t *resource, coap_session_t *session, coap_pdu_t *request, coap_binary_t *token, coap_string_t *query, coap_pdu_t *response);
-static void hnd_espressif_put(coap_context_t *ctx, coap_resource_t *resource, coap_session_t *session, coap_pdu_t *request, coap_binary_t *token, coap_string_t *query, coap_pdu_t *response);
+
+// static void hnd_espressif_get(coap_context_t *ctx, coap_resource_t *resource, coap_session_t *session, coap_pdu_t *request, coap_binary_t *token, coap_string_t *query, coap_pdu_t *response);
+// static void hnd_espressif_put(coap_context_t *ctx, coap_resource_t *resource, coap_session_t *session, coap_pdu_t *request, coap_binary_t *token, coap_string_t *query, coap_pdu_t *response);
 
 int64_t tick_device_monitor = 0;
 int64_t tick_status_data = 0;
@@ -168,7 +171,7 @@ void coap_client_server(void *p) {
     coap_register_nack_handler(ctx, client_nack_handler);
 
     coap_log(LOG_NOTICE, "Sending initial data!\n");
-    //coap_send_initial_data();
+    
 
     //prepare_status_data_session(&session_status, &tick_status_data);
     //prepare_device_monitor_session(&session_device, &tick_device_monitor);
@@ -183,7 +186,7 @@ void coap_client_server(void *p) {
                 // while (local_server_ip == 0) {
                 //     coap_log(LOG_NOTICE, "local server ip is zero %d\n", local_server_ip);
                 //     // sending_initial_data = 1;
-                //     coap_send_initial_data();
+                //    
                 //     vTaskDelay(1000 / portTICK_RATE_MS);
                 // }
                 send_image(session_image, &tick_send_image);
@@ -208,13 +211,10 @@ static coap_pdu_t *coap_new_request(coap_context_t *ctx,
     coap_pdu_t *pdu;
     (void)ctx;
 
-    if (!(pdu = coap_new_pdu(session))) {
+
+    if (!(pdu = coap_new_pdu(type,m,session))) {
         return NULL;
     }
-
-    pdu->type = type;
-    pdu->tid = coap_new_message_id(session);
-    pdu->code = m;
 
     if (options) coap_add_optlist_pdu(pdu, options);
 
@@ -258,9 +258,9 @@ void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_v
     }
 }
 
-static void client_response_handler(coap_context_t *ctx, coap_session_t *session,
-                                    coap_pdu_t *sent, coap_pdu_t *received,
-                                    const coap_tid_t id) {
+static coap_response_t client_response_handler(coap_session_t *session,
+                                    const coap_pdu_t *sent, const coap_pdu_t *received,
+                                    const coap_mid_t id) {
     coap_pdu_t *pdu = NULL;
     coap_opt_t *control_opt;
     uint8_t control_opt_value;
@@ -268,197 +268,34 @@ static void client_response_handler(coap_context_t *ctx, coap_session_t *session
     coap_opt_iterator_t opt_iter;
     unsigned char buf[4];
     size_t len;
-    unsigned char *databuf;
-    coap_tid_t tid;
+    const unsigned char *databuf = NULL;
+    coap_mid_t tid;
 
     coap_block_missing_t missing_block_opt;
 
-    if (COAP_RESPONSE_CLASS(received->code) == 2 ||
-        COAP_RESPONSE_CLASS(received->code) == 4) {
-        control_opt = coap_check_option(received, COAP_OPTION_CONTROL, &opt_iter);
-        if (control_opt) {
-            control_opt_value = *coap_opt_value(control_opt);
-            switch (control_opt_value) {
-                case 0:
-                    coap_log(LOG_NOTICE, "Control opt identity response received!\n");
-                    identity_response_flag = 1;
-                    size_t data_len;
-                    uint8_t *data;
-                    coap_get_data(received, &data_len, &data);
-                    if (data_len > 0) {
-                        memcpy(&local_server_ip, data, data_len);
-                        coap_log(LOG_NOTICE, "local ip received, local_ip=%d\n", local_server_ip);
-                    }
-                    break;
-                default:
-                    coap_log(LOG_NOTICE, "Control opt number %d response received!\n", control_opt_value);
-                    break;
-            }
-        }
+    coap_pdu_code_t rcvd_code = coap_pdu_get_code(received);
+    const unsigned char *data = NULL;
+    size_t data_len;
+    size_t offset;
+    size_t total;
 
-        /* Need to see if blocked response */
-        block_opt = coap_check_option(received, COAP_OPTION_BLOCK1, &opt_iter);
-        if (block_opt) {
-            unsigned int szx = COAP_OPT_BLOCK_SZX(block_opt);
-            unsigned int num = coap_opt_block_num(block_opt);
-            unsigned int m = COAP_OPT_BLOCK_MORE(block_opt);
-            coap_log(LOG_NOTICE, "Received block option! block size is %u, block nr. %u, more %d\n", szx, num, m);
-
-            count_retransmission += session->last_retransmission_cnt;
-            session->last_retransmission_cnt = 0;
-            if (szx != block.szx) {
-                unsigned int bytes_sent = ((block.num + 1) << (block.szx + 4));
-                if (bytes_sent % (1 << (szx + 4)) == 0) {
-                    /* Recompute the block number of the previous packet given
-           * the new block size */
-                    num = block.num = (bytes_sent >> (szx + 4)) - 1;
-                    block.szx = szx;
-                    coap_log(LOG_NOTICE,
-                             "new Block1 size is %u, block number %u completed\n",
-                             (1 << (block.szx + 4)), block.num);
-                } else {
-                    coap_log(LOG_NOTICE,
-                             "ignoring request to increase Block1 size, "
-                             "next block is not aligned on requested block "
-                             "size boundary. "
-                             "(%u x %u mod %u = %u != 0)\n",
-                             block.num + 1, (1 << (block.szx + 4)), (1 << (szx + 4)),
-                             bytes_sent % (1 << (szx + 4)));
-                }
-            }
-
-            if (last_block1_tid == received->tid) {
-                coap_log(LOG_NOTICE, "Duplicated block ack, ignoring\n");
-                /*
-         * Duplicate BLOCK1 ACK
-         *
-         * RFCs not clear here, but on a lossy connection, there could
-         * be multiple BLOCK1 ACKs, causing the client to retransmit the
-         * same block multiple times.
-         *
-         * Once a block has been ACKd, there is no need to retransmit
-         * it.
-         */
-                return;
-            }
-            last_block1_tid = received->tid;
-
-            // TODO: handle packet loss7
-
-            block.num = num;
-            block.m = m;
-
-            if (payload.length <= (block.num + 1) * (1 << (block.szx + 4))) {
-                coap_log(LOG_NOTICE, "Maximum block option received, updating log data to controller\n");
-                // no more miss and last block was received
-                send_duration = esp_timer_get_time() - send_duration;
-                data_collection_count++;
-
-                coap_log(LOG_EMERG, "img %lu sent\n", data_collection_count);
-
-                time_t ntp_time;
-                time(&ntp_time);
-
-                coap_session_t *controller_session;
-
-                coap_address_t controller_addr;
-                coap_address_init(&controller_addr);
-                controller_addr.addr.sin.sin_family = AF_INET;
-                controller_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
-                controller_addr.addr.sin.sin_addr.s_addr = CONTROLLER_ADDRESS;
-
-                controller_session = coap_new_client_session(
-                    ctx, NULL, &controller_addr, COAP_PROTO_UDP);
-                if (!controller_session) {
-                    coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-                }
-
-                pdu = coap_new_request(
-                    ctx, controller_session, COAP_REQUEST_PUT, NULL, COAP_MESSAGE_NON, NULL,
-                    0); /* first, create bare PDU w/o any option  */
-                uint8_t data[61];
-                memcpy(data, ap_mac, 6);
-                memcpy(data + 6, &ip, 4);
-                memcpy(data + 6 + 4, &ntp_time, 4);
-                uint64_t device_timestamp = esp_timer_get_time();
-                memcpy(data + 6 + 4 + 4, &device_timestamp, 8);
-                memcpy(data + 6 + 4 + 4 + 8, &data_collection_count, 4);
-                memcpy(data + 6 + 4 + 4 + 8 + 4, &send_duration, 8);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8, &payload.length, 4);  //
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4, &total_payload_sent, 4);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4, &total_missing_payload, 4);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4 + 4, &count_total_block, 4);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4 + 4 + 4, &count_missing_block, 4);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4 + 4 + 4 + 4, &count_retransmission, 4);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4 + 4 + 4 + 4 + 4, (uint8_t *)&block_size, 1);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4 + 4 + 4 + 4 + 4 + 1, (uint8_t *)&block_seq_len, 1);
-                memcpy(data + 6 + 4 + 4 + 8 + 4 + 8 + 4 + 4 + 4 + 4 + 4 + 4 + 1 + 1, (uint8_t *)&image_size, 1);
-
-                coap_log(LOG_NOTICE, MACSTR ",%d,%ld,%lld,%ld,%lld,%d,%d,%d,%ld,%ld,%ld,%d,%d,%d\n", MAC2STR(ap_mac), ip, ntp_time, device_timestamp, data_collection_count, send_duration, payload.length, total_payload_sent, total_missing_payload, count_total_block, count_missing_block, count_retransmission, block_size, block_seq_len, image_size);
-
-                uint8_t optval = 20;
-                coap_add_option(pdu, COAP_OPTION_CONTROL, 1, &optval);
-
-                coap_add_data(pdu, 61, data);
-
-                coap_send(controller_session, pdu);
-
-                coap_session_release(controller_session);
-
-                image_resp_wait = 0;
-                tick_send_image = esp_timer_get_time();
-                return;
-            }
-
-            unsigned int remaining_payload =
-                coap_get_remaining_payload_number(payload.length, block.num,
-                                                  block.szx);
-            coap_log(LOG_NOTICE, "Remaining payload %d\n", remaining_payload);
-
-            pdu = coap_new_request(
-                ctx, session, COAP_REQUEST_PUT, NULL, COAP_MESSAGE_CON, NULL,
-                0); /* first, create bare PDU w/o any option  */
-
-            if (pdu) {
-                count_total_block++;
-
-                block.num = block.num + 1;
-                block.m = ((block.num + 1) * (1 << (block.szx + 4)) < payload.length);
-#if DATA_COLLECTION_RETRANSMISSION_TIMEOUT_SEC == 0 && DATA_COLLECTION_RETRANSMISSION_TIMEOUT_FRAC == 0
-                rtt_micros = esp_timer_get_time() - rtt_micros;
-                coap_fixed_point_t fixed_point;
-                fixed_point.integer_part = rtt_micros / 100000;
-                fixed_point.fractional_part = (rtt_micros % 100000) / 1000;
-                coap_session_set_ack_timeout(session, fixed_point);
-#endif
-
-                coap_add_option(pdu, COAP_OPTION_URI_PATH, 5, (uint8_t *)image_path);
-
-                coap_add_option(
-                    pdu, COAP_OPTION_BLOCK1,
-                    coap_encode_var_safe(buf, sizeof(buf),
-                                         (block.num << 4) | (block.m << 3) | block.szx),
-                    buf);
-
-                coap_add_block(pdu, payload.length, payload.s, block.num, block.szx);
-
-                total_payload_sent += pdu->used_size + 46;
-                last_block_num = block.num;
-                tid = coap_send(session, pdu);
-                if (tid == COAP_INVALID_TID) {
-                    coap_log(LOG_NOTICE,
-                             "client_response_handler: error sending new request\n");
-                }
-            }
-        } else {
-            if (coap_get_data(received, &len, &databuf)) {
-                coap_log(LOG_NOTICE, "Received: %.*s\n", (int)len, databuf);
-            }
-        }
+    if (COAP_RESPONSE_CLASS(rcvd_code) == 2) {
+        if (coap_get_data_large(received, &data_len, &data, &offset, &total))
+      {
+         if (data_len != total)
+         {
+            printf("Unexpected partial data received offset %u, length %u\n", offset, data_len);
+         }
+         printf("Received:\n%.*s\n", (int)data_len, data);
+         
+      }
+        
     }
+
+     return COAP_RESPONSE_OK;
 }
 
-static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, coap_pdu_t *sent, coap_nack_reason_t reason, const coap_tid_t id) {
+static void client_nack_handler(coap_session_t *session,const coap_pdu_t *sent,const coap_nack_reason_t reason, const coap_mid_t id) {
     coap_log(LOG_NOTICE, "NACK trigger received, the reason is %d\n", reason);
     coap_opt_iterator_t opt_iter;
 
@@ -468,66 +305,6 @@ static void client_nack_handler(coap_context_t *ctx, coap_session_t *session, co
     }
 }
 
-void coap_send_initial_data() {
-    coap_pdu_t *pdu = NULL;
-    coap_session_t *session = NULL;
-    coap_address_t controller_addr;
-    uint8_t *identity_data = (uint8_t *)malloc(15 * sizeof(uint8_t));
-    uint8_t *option_value = (uint8_t *)malloc(1 * sizeof(uint8_t));
-    option_value[0] = 0;
-
-    identity_response_flag = 0;
-    uint8_t mac_address[6];
-    esp_base_mac_addr_get(mac_address);
-    if (mac_address[5] != 0xFF) {
-        mac_address[5]++;
-    } else {
-        mac_address[4]++;
-    }
-    wifi_ap_record_t ap_record;
-    esp_wifi_sta_get_ap_info(&ap_record);
-    memcpy(identity_data, mac_address, sizeof(mac_address));
-
-    esp_netif_ip_info_t ip_info;
-    esp_netif_get_ip_info(wifiSTA, &ip_info);
-    uint32_t ip_addr = ip_info.ip.addr;
-
-    memcpy(identity_data + 6, &ip_addr, sizeof(ip_addr));
-
-    identity_data[10] = status_data_transfer_type;
-    identity_data[11] = is_sensing_active;
-    identity_data[12] = (uint8_t)image_size;
-    identity_data[13] = (uint8_t)image_format;
-    identity_data[14] = data_send_period;
-
-    coap_address_init(&controller_addr);
-    controller_addr.addr.sin.sin_family = AF_INET;
-    controller_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
-    controller_addr.addr.sin.sin_addr.s_addr = CONTROLLER_ADDRESS;
-
-    session = coap_new_client_session(ctx, NULL, &controller_addr, COAP_PROTO_UDP);
-    if (!session) {
-        coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-        return;
-    }
-
-    pdu = coap_new_request(ctx, session, COAP_REQUEST_PUT, NULL, COAP_MESSAGE_CON, NULL, 0);
-
-    coap_add_option(pdu, COAP_OPTION_CONTROL, 1, option_value);
-
-    coap_add_data(pdu, 15, identity_data);
-
-    coap_send(session, pdu);
-
-    while (!identity_response_flag && !nack_flag) {
-        coap_run_once(ctx, 10);
-        if (nack_flag) {
-            nack_flag = 0;
-            break;
-        }
-    }
-    coap_session_release(session);
-}
 
 void wifi_disconnect() {
     vTaskDelay(3 * 1000 / portTICK_RATE_MS);
@@ -544,390 +321,7 @@ void wifi_disconnect() {
     vTaskDelete(NULL);
 }
 
-static void coap_check_execute_broadcast(coap_pdu_t *request) {
-    coap_context_t *ctx;
-    size_t size;
-    uint8_t *data;
 
-    if (!coap_get_broadcast_option(request)) {
-        coap_log(LOG_NOTICE, "Not broadcast packet, exiting!\n");
-    } else {
-        coap_get_data(request, &size, &data);
-        coap_log(LOG_NOTICE, "Get broadcast option\n");
-        // SENDING BROADCAST
-        coap_address_t dst_addr;
-
-        coap_session_t *broadcast_session = NULL;
-
-        char tmpbuf[INET6_ADDRSTRLEN];
-
-        coap_address_init(&dst_addr);
-
-        dst_addr.addr.sin.sin_family = AF_INET;
-        dst_addr.addr.sin.sin_port = htons(5683);
-        esp_netif_ip_info_t ap_ip_info;
-        esp_netif_get_ip_info(wifiAP, &ap_ip_info);
-        inet_ntop(AF_INET, &ap_ip_info.ip.addr, tmpbuf, sizeof(tmpbuf));
-        inet_ntop(AF_INET, &ap_ip_info.gw.addr, tmpbuf, sizeof(tmpbuf));
-        inet_ntop(AF_INET, &ap_ip_info.netmask.addr, tmpbuf, sizeof(tmpbuf));
-
-        ip4_addr_t temp;
-        temp.addr = ap_ip_info.ip.addr | ~(ap_ip_info.netmask.addr);
-        // dst_addr.addr.sin.sin_addr = temp.addr;
-        memcpy(&dst_addr.addr.sin.sin_addr, &temp.addr, sizeof(dst_addr.addr.sin.sin_addr));
-        inet_ntop(AF_INET, &dst_addr.addr.sin.sin_addr, tmpbuf, sizeof(tmpbuf));
-        coap_log(LOG_NOTICE, "Broadcast dest addr has been set, IP=%s\n", tmpbuf);
-
-        ctx = coap_new_context(NULL);
-
-        broadcast_session = coap_new_client_session(
-            ctx, NULL, &dst_addr, COAP_PROTO_UDP);
-        if (!broadcast_session) {
-            coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-            return;
-        }
-
-        coap_opt_iterator_t opt_iter;
-        coap_optlist_t *optlist = NULL;
-        coap_opt_t *opt;
-
-        coap_log(LOG_NOTICE, "Preparing coap option\n");
-
-        opt = coap_check_option(request, COAP_OPTION_CONTROL, &opt_iter);
-        if (opt) {
-            coap_insert_optlist(&optlist, coap_new_optlist(COAP_OPTION_CONTROL, coap_opt_length(opt), coap_opt_value(opt)));
-        }
-
-        opt = coap_check_option(request, COAP_OPTION_BROADCAST, &opt_iter);
-        uint8_t *broadcast_opt_value = coap_opt_value(opt);
-
-        if (opt && (*broadcast_opt_value > 0)) {
-            (*broadcast_opt_value)--;
-            coap_insert_optlist(&optlist, coap_new_optlist(COAP_OPTION_BROADCAST, 1, broadcast_opt_value));
-            coap_log(LOG_NOTICE, "Broadcast option list added, depth = %d\n", *broadcast_opt_value);
-        } else {
-            coap_log(LOG_NOTICE, "Broadcast option list not added, depth already %d\n", *broadcast_opt_value);
-        }
-
-        coap_pdu_t *broadcast_request = coap_new_pdu(broadcast_session);
-        if (broadcast_request == NULL) {
-            coap_log(LOG_NOTICE, "Make broadcast PDU failed!\n");
-        }
-        broadcast_request->type = COAP_MESSAGE_NON;
-        broadcast_request->tid = coap_new_message_id(broadcast_session);
-        broadcast_request->code = COAP_REQUEST_PUT;
-
-        coap_add_optlist_pdu(broadcast_request, &optlist);
-        coap_add_data(broadcast_request, size, (uint8_t *)data);
-
-        if (coap_send(broadcast_session, broadcast_request) == COAP_INVALID_TID) {
-            coap_log(LOG_NOTICE, "Send broadcast failed! Invalid TID!\n");
-        }
-
-        coap_log(LOG_NOTICE, "Broadcast sent\n");
-
-        if (broadcast_session) {
-            coap_session_release(broadcast_session);
-        }
-
-        if (ctx) {
-            coap_free_context(ctx);
-        }
-
-        coap_log(LOG_NOTICE, "Broadcast session released\n");
-    }
-}
-
-static void hnd_espressif_get(coap_context_t *ctx,
-                              coap_resource_t *resource,
-                              coap_session_t *session,
-                              coap_pdu_t *request,
-                              coap_binary_t *token,
-                              coap_string_t *query,
-                              coap_pdu_t *response) {
-    coap_opt_iterator_t opt_iter;
-    uint8_t opt_response;
-    uint8_t *data_response;
-    coap_opt_t *opt;
-    opt = coap_check_option(request, COAP_OPTION_CONTROL, &opt_iter);
-    uint8_t opt_value = *coap_opt_value(opt);
-    wifi_ap_record_t ap_record;
-    if (coap_opt_length(opt) > 1) {
-        coap_log(LOG_NOTICE, "Invalid control opt length!\n");
-        response->code = COAP_RESPONSE_CODE(404);
-    } else {
-        switch (opt_value) {
-            case 2: {
-                coap_log(LOG_NOTICE, "Receiving free heap status control request!\n");
-                response->code = COAP_RESPONSE_CODE(205);
-                opt_response = 2;
-                coap_add_option(response,
-                                COAP_OPTION_CONTROL,
-                                sizeof(opt_response), &opt_response);
-                uint32_t free_heap = esp_get_free_heap_size();
-                data_response = (uint8_t *)malloc(sizeof(free_heap));
-                memcpy(data_response, &free_heap, sizeof(free_heap));
-                coap_add_data(response, sizeof(free_heap), data_response);
-                break;
-            }
-            case 3: {
-                coap_log(LOG_NOTICE, "Receiving parent rssi control request!\n");
-                if (esp_wifi_sta_get_ap_info(&ap_record) == ESP_OK) {
-                    response->code = COAP_RESPONSE_CODE(205);
-                    opt_response = 3;
-                    coap_add_option(response,
-                                    COAP_OPTION_CONTROL,
-                                    sizeof(opt_response), &opt_response);
-                    data_response = (uint8_t *)malloc(sizeof(ap_record.rssi));
-                    *data_response = ap_record.rssi;
-                    coap_add_data(response, sizeof(ap_record.rssi), data_response);
-                } else {
-                    response->code = COAP_RESPONSE_CODE(404);
-                }
-                break;
-            }
-            case 4: {
-                coap_log(LOG_NOTICE, "Receiving network discovery control request!\n");
-
-                coap_log(LOG_NOTICE, "Config scan!\n");
-                wifi_scan_config_t scan_config;
-                scan_config.ssid = (uint8_t *)ap_ssid;
-                scan_config.bssid = NULL;
-                scan_config.channel = 0;
-                scan_config.show_hidden = 1;
-                scan_config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-                scan_config.scan_time.active.min = 0;
-                scan_config.scan_time.active.max = 0;
-
-                coap_log(LOG_NOTICE, "AP SSID %s\n", ap_ssid);
-
-                coap_log(LOG_NOTICE, "Start scan!\n");
-                if (esp_wifi_scan_start(&scan_config, true) == ESP_OK) {
-                    response->code = COAP_RESPONSE_CODE(205);
-                    opt_response = 4;
-
-                    coap_log(LOG_NOTICE, "Add option!\n");
-                    coap_add_option(response,
-                                    COAP_OPTION_CONTROL,
-                                    sizeof(opt_response), &opt_response);
-                    uint16_t scan_list_size = 20;
-                    wifi_ap_record_t ap_info[scan_list_size];
-                    uint16_t scan_count = 0;
-
-                    coap_log(LOG_NOTICE, "Get AP!\n");
-                    esp_wifi_scan_get_ap_records(&scan_list_size, ap_info);
-                    esp_wifi_scan_get_ap_num(&scan_count);
-
-                    data_response = (uint8_t *)malloc(7 * scan_count * sizeof(uint8_t));
-
-                    coap_log(LOG_NOTICE, "Total APs scanned = %u\n", scan_count);
-                    for (int i = 0; (i < 20) && (i < scan_count); i++) {
-                        coap_log(LOG_NOTICE, "SSID \t\t%s\n", ap_info[i].ssid);
-                        coap_log(LOG_NOTICE, "BSSID \t\t" MACSTR "\n", MAC2STR(ap_info[i].bssid));
-                        coap_log(LOG_NOTICE, "RSSI \t\t%d\n", ap_info[i].rssi);
-                        memcpy(data_response + (i * 7), &(ap_info[i].bssid), sizeof(ap_info[i].bssid));
-                        memcpy(data_response + (i * 7 + 6), &(ap_info[i].rssi), sizeof(ap_info[i].rssi));
-                    }
-                    coap_log(LOG_NOTICE, "Add data!\n");
-                    coap_add_data(response, scan_count * 7, data_response);
-                } else {
-                    response->code = COAP_RESPONSE_CODE(404);
-                }
-                break;
-            }
-            default: {
-                coap_log(LOG_NOTICE, "Invalid control opt value!\n");
-                response->code = COAP_RESPONSE_CODE(404);
-            }
-        }
-    }
-}
-
-static void hnd_espressif_put(coap_context_t *ctx,
-                              coap_resource_t *resource,
-                              coap_session_t *session,
-                              coap_pdu_t *request,
-                              coap_binary_t *token,
-                              coap_string_t *query,
-                              coap_pdu_t *response) {
-    coap_opt_iterator_t opt_iter;
-    coap_opt_t *opt;
-    size_t size;
-    uint8_t opt_value;
-    size_t opt_length;
-    unsigned char *data;
-    opt = coap_check_option(request, COAP_OPTION_CONTROL, &opt_iter);
-    opt_value = *coap_opt_value(opt);
-    opt_length = coap_opt_length(opt);
-
-    // coap_add_option(response, COAP_OPTION_CONTROL, opt_length, opt_value);
-    // coap_add_data(response, size, data);
-
-    response->code = COAP_RESPONSE_CODE(201);
-
-    if (opt_length > 1) {
-        coap_log(LOG_NOTICE, "Invalid control opt length!\n");
-        response->code = COAP_RESPONSE_CODE(404);
-    } else {
-        switch (opt_value) {
-            case 5: {
-                coap_log(LOG_NOTICE, "Receiving send status type control put!\n");
-                (void)coap_get_data(request, &size, &data);
-                if (size != 1) {
-                    coap_log(LOG_NOTICE, "Invalid size length %d for control option number %d\n", size, opt_value);
-                    response->code = COAP_RESPONSE_CODE(400);
-                } else {
-                    status_data_transfer_type = *data;
-                    set_config_param_unsigned_char("st_ctl_dtype", status_data_transfer_type);
-
-                    response->code = COAP_RESPONSE_CODE(204);
-                }
-                break;
-            }
-            case 6: {
-                coap_log(LOG_NOTICE, "Receiving sensing/not control put!\n");
-                /* coap_get_data() sets size to 0 on error */
-                (void)coap_get_data(request, &size, &data);
-
-                if (SUPPORT_SENSING == 0) {
-                    response->code = COAP_RESPONSE_CODE(401);
-                    coap_log(LOG_NOTICE, "sensing not supported!\n");
-                } else if (size != 1) {
-                    response->code = COAP_RESPONSE_CODE(400);
-                    coap_log(LOG_NOTICE, "payload format wrong!\n");
-                } else {
-                    is_sensing_active = data[0];
-                    set_config_param_unsigned_char("sensing", is_sensing_active);
-                    // xTaskCreate(wifi_disconnect, "wifi_dc", 1 * 1024, NULL, 5, NULL);
-                    response->code = COAP_RESPONSE_CODE(204);
-                }
-                break;
-            }
-            case 7: {
-                /* Total data of this option is 1 bytes, including:
-                image_size = 1 bytes */
-                coap_log(LOG_NOTICE, "Receiving image size control put!\n");
-
-                coap_get_data(request, &size, &data);
-                if (SUPPORT_SENSING == 0) {
-                    response->code = COAP_RESPONSE_CODE(401);
-                    coap_log(LOG_NOTICE, "sensing not supported!\n");
-                } else if (size != 1) {
-                    coap_log(LOG_NOTICE, "Data size %d for control type number %d wrong!\n", size, opt_value);
-                } else {
-                    coap_log(LOG_NOTICE, "Get camera sensor!\n");
-                    sensor_t *s = esp_camera_sensor_get();
-                    coap_log(LOG_NOTICE, "Get image size value!\n");
-                    // memcpy(&image_size, data, sizeof(image_size));
-                    image_size = data[0];
-                    set_config_param_int("img_sz", image_size);
-                    coap_log(LOG_NOTICE, "Set value!\n");
-                    s->set_framesize(s, image_size);
-                    xTaskCreate(wifi_disconnect, "wifi_dc", 1 * 1024, NULL, 5, NULL);
-                }
-                break;
-            }
-            case 8: {
-                /* Total data of this option is 1 bytes, including:
-                data_send_period = 1 byte */
-                coap_log(LOG_NOTICE, "Receiving image format control put!\n");
-
-                coap_get_data(request, &size, &data);
-                if (SUPPORT_SENSING == 0) {
-                    response->code = COAP_RESPONSE_CODE(401);
-                    coap_log(LOG_NOTICE, "sensing not supported!\n");
-                } else if (size != 1) {
-                    coap_log(LOG_NOTICE, "Data size %d for control type number %d wrong!\n", size, opt_value);
-                } else {
-                    sensor_t *s = esp_camera_sensor_get();
-                    // memcpy(&image_format, data, sizeof(image_format));
-                    image_format = data[0];
-                    set_config_param_int("img_fmt", image_format);
-                    s->set_pixformat(s, image_format);
-                    xTaskCreate(wifi_disconnect, "wifi_dc", 1 * 1024, NULL, 5, NULL);
-                }
-                break;
-            }
-            case 9: {
-                /* Total data of this option is 1 bytes, including:
-                data_send_period = 1 byte */
-                coap_log(LOG_NOTICE, "Receiving sending frequency control put!\n");
-
-                coap_get_data(request, &size, &data);
-                if (size != 1) {
-                    coap_log(LOG_NOTICE, "Data size %d for control type number %d wrong!\n", size, opt_value);
-                } else {
-                    memcpy(&data_send_period, data, sizeof(data_send_period));
-                    set_config_param_unsigned_char("send_period", data_send_period);
-                }
-                break;
-            }
-            case 10: {
-                /* total 4 bytes that is local machine ip address */
-                coap_log(LOG_NOTICE, "Receiving local machine destination control put!\n");
-                coap_get_data(request, &size, &data);
-                if (!SUPPORT_SENSING) {
-                    coap_log(LOG_NOTICE, "Sensing not supported!\n");
-                } else if (size != 3) {
-                    coap_log(LOG_NOTICE, "Data size %d for control type number %d wrong!\n", size, opt_value);
-                } else {
-                    memcpy(&sensing_destination_ip, data, sizeof(sensing_destination_ip));
-                }
-                break;
-            }
-            case 11: {
-                /* The data included in this control opt is 6 byte which is the mac address */
-                coap_log(LOG_NOTICE, "Receiving network configure control put!\n");
-
-                /* coap_get_data() sets size to 0 on error */
-                (void)coap_get_data(request, &size, &data);
-
-                if (size != 6) {
-                    coap_log(LOG_NOTICE, "Invalid pdu size! It's not 6, its %d\n", size);
-                } else {
-                    // Set new bssid
-                    memcpy(old_bssid, bssid, sizeof(bssid));
-                    memcpy(bssid, data, sizeof(bssid));
-                    set_config_param_blob("old_bssid", old_bssid, sizeof(old_bssid));
-                    set_config_param_blob("bssid", bssid, sizeof(bssid));
-                    xTaskCreate(wifi_disconnect, "wifi_dc", 1 * 1024, NULL, 5, NULL);
-                }
-                break;
-            }
-            case 18: {
-                coap_log(LOG_NOTICE, "Receiving block size control put!\n");
-
-                if (size != 4) {
-                    coap_log(LOG_NOTICE, "Invalid pdu size! It's not 4, its %d\n", size);
-                } else {
-                    // Set new bssid
-                    memcpy(&block_size, data, sizeof(block_size));
-                    set_config_param_int("block_size", block_size);
-                }
-
-                break;
-            }
-            case 19: {
-                coap_log(LOG_NOTICE, "Receiving block seq len control put!\n");
-
-                if (size != 4) {
-                    coap_log(LOG_NOTICE, "Invalid pdu size! It's not 4, its %d\n", size);
-                } else {
-                    // Set new bssid
-                    memcpy(&block_seq_len, data, sizeof(block_seq_len));
-                    set_config_param_int("block_seq_len", block_seq_len);
-                }
-
-                break;
-            }
-            default: {
-                coap_log(LOG_NOTICE, "Invalid control opt value!\n");
-                response->code = COAP_RESPONSE_CODE(404);
-            }
-        }
-    }
-    coap_check_execute_broadcast(request);
-}
 
 void prepare_device_monitor_session(coap_session_t **session, int64_t *tick) {
     coap_address_t controller_addr;
@@ -1099,15 +493,82 @@ void send_status_data(coap_session_t *session, int64_t *tick) {
     }
 }
 
+static coap_address_t * coap_get_address(coap_uri_t *uri)
+{
+   static coap_address_t dst_addr;
+   char *phostname = NULL;
+   struct addrinfo hints;
+   struct addrinfo *addrres;
+   int error;
+   char tmpbuf[INET6_ADDRSTRLEN];
+
+   phostname = (char *)calloc(1, uri->host.length + 1);
+   if (phostname == NULL)
+   {
+      ESP_LOGE(TAG, "calloc failed");
+      return NULL;
+   }
+   memcpy(phostname, uri->host.s, uri->host.length);
+
+   memset((char *)&hints, 0, sizeof(hints));
+   hints.ai_socktype = SOCK_DGRAM;
+   hints.ai_family = AF_UNSPEC;
+
+   error = getaddrinfo(phostname, NULL, &hints, &addrres);
+   if (error != 0)
+   {
+      ESP_LOGE(TAG, "DNS lookup failed for destination address %s. error: %d", phostname, error);
+      free(phostname);
+      return NULL;
+   }
+   if (addrres == NULL)
+   {
+      ESP_LOGE(TAG, "DNS lookup %s did not return any addresses", phostname);
+      free(phostname);
+      return NULL;
+   }
+   free(phostname);
+   coap_address_init(&dst_addr);
+   switch (addrres->ai_family)
+   {
+   case AF_INET:
+      memcpy(&dst_addr.addr.sin, addrres->ai_addr, sizeof(dst_addr.addr.sin));
+      dst_addr.addr.sin.sin_port = htons(uri->port);
+      inet_ntop(AF_INET, &dst_addr.addr.sin.sin_addr, tmpbuf, sizeof(tmpbuf));
+      ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
+      break;
+   case AF_INET6:
+      memcpy(&dst_addr.addr.sin6, addrres->ai_addr, sizeof(dst_addr.addr.sin6));
+      dst_addr.addr.sin6.sin6_port = htons(uri->port);
+      inet_ntop(AF_INET6, &dst_addr.addr.sin6.sin6_addr, tmpbuf, sizeof(tmpbuf));
+      ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
+      break;
+   default:
+      ESP_LOGE(TAG, "DNS lookup response failed");
+      return NULL;
+   }
+   freeaddrinfo(addrres);
+
+   return &dst_addr;
+}
+
 void prepare_image_session(coap_session_t **session, int64_t *tick) {
-    coap_address_t dst_addr;
-    coap_address_init(&dst_addr);
-    dst_addr.addr.sin.sin_family = AF_INET;
-    dst_addr.addr.sin.sin_port = htons(COAP_DEFAULT_PORT);
-    dst_addr.addr.sin.sin_addr.s_addr = local_server_ip;
+    coap_address_t *dst_addr;
+    static coap_uri_t uri;
+    const char *server_uri = "coap://192.168.1.149";
+
+    if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1)
+    {
+      ESP_LOGE(TAG, "CoAP server uri error");
+      
+    }
+ 
+    dst_addr = coap_get_address(&uri);
+    if (!dst_addr)
+      
 
     *session = coap_new_client_session(
-        ctx, NULL, &dst_addr, COAP_PROTO_UDP);
+        ctx, NULL, dst_addr, COAP_PROTO_UDP);
     if (!*session) {
         coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
         coap_session_release(*session);
@@ -1195,15 +656,19 @@ void send_image(coap_session_t *session, int64_t *tick) {
         coap_add_option(request, COAP_OPTION_SIZE1, coap_encode_var_safe(buf, sizeof(buf), payload.length),
                         buf);
 
-        coap_add_block(request, payload.length, payload.s, block.num, block.szx);
+        //coap_add_block(request, payload.length, payload.s, block.num, block.szx);
+        coap_add_data_large_request(session,request, payload.length, payload.s, NULL, NULL);
+        // coap_log(LOG_NOTICE,
+        //          "Sending block 1, size %d, msgtype %d, num %d, m %d,"
+        //          "szx %d\n",
+        //          request->used_size, request->type, block.num, block.m, block.szx);
+        // total_payload_sent += request->used_size + 46;
+        // last_block_num = block.num;
 
-        coap_log(LOG_NOTICE,
-                 "Sending block 1, size %d, msgtype %d, num %d, m %d,"
-                 "szx %d\n",
-                 request->used_size, request->type, block.num, block.m, block.szx);
-        total_payload_sent += request->used_size + 46;
-        last_block_num = block.num;
 
+     
+      //coap_add_data_large_request(session, request,sizeof(buf), buf, NULL, NULL);
+    
         coap_send(session, request);
 
     clean_up:
