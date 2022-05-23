@@ -39,7 +39,7 @@ const static char *TAG = "CoAP_server_client";
 //uint32_t local_server_ip = 118073536; /* 192.168.9.7*/
 //uint32_t local_server_ip = 269068480; /* 192.168.9.16*/
 
-const char *server_uri = "coap://192.168.9.16"; //alamat server coap
+const char *server_uri = "coap://159.223.75.124"; // alamat server coap
 
 int64_t send_duration = 0;
 
@@ -174,14 +174,14 @@ void coap_client_server(void *p) {
     //prepare_status_data_session(&session_status, &tick_status_data);
     //prepare_device_monitor_session(&session_device, &tick_device_monitor);
     prepare_image_session(ctx,&session_image, &tick_send_image);
-    prepare_get_throughput_prediction(ctx,&session_throughput_prediction, &tick_get_throughput_prediction);
+    //prepare_get_throughput_prediction(ctx,&session_throughput_prediction, &tick_get_throughput_prediction);
 
     while (1) {
         if (is_connected) {
             //send_device_monitor(session_device, &tick_device_monitor);
             if (is_sensing_active) {
                 send_image(session_image, &tick_send_image);
-                get_throughput_prediction(session_throughput_prediction, &tick_get_throughput_prediction);
+                //get_throughput_prediction(session_throughput_prediction, &tick_get_throughput_prediction);
             }        
             wait_ms = 60000;
             while (image_resp_wait) {

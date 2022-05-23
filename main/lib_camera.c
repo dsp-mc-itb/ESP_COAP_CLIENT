@@ -85,10 +85,10 @@ esp_err_t camera_init_default() {
     // init with high specs to pre-allocate larger buffers
     // config.frame_size = FRAMESIZE_96X96;
     // config.frame_size = FRAMESIZE_VGA;
-    config.frame_size = FRAMESIZE_FHD;
+    config.frame_size = FRAMESIZE_HD;
     config.jpeg_quality = 15;
     config.fb_count = 1;
-    //config.fb_location = CAMERA_FB_IN_PSRAM;
+    config.fb_location = CAMERA_FB_IN_PSRAM;
 
     // camera init
     esp_err_t err = esp_camera_init(&config);
