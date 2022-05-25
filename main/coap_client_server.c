@@ -951,9 +951,9 @@ void send_image(coap_session_t *session, int64_t *tick) {
         // coap_add_option(request, COAP_OPTION_SIZE1, coap_encode_var_safe(buf, sizeof(buf), payload.length),
         //                 buf);
         printf("\nLENG DATA : %d\n\n",payload.length);
-        //coap_add_data_large_request(session,request, payload.length, payload.s, NULL, NULL);
+        coap_add_data_large_request(session,request, payload.length, payload.s, NULL, NULL);
         
-        coap_add_data_large_request(session,request, 1332, dummy, NULL, NULL);
+        //coap_add_data_large_request(session,request, 1332, dummy, NULL, NULL);
         coap_log(LOG_NOTICE, "Start sending image 3, start tick %lld\n", send_duration);
         image_resp_wait = 1;
         coap_send(session, request);
