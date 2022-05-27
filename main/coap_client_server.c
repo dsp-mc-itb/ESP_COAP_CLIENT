@@ -52,10 +52,6 @@ coap_block_mod_t block = {.num = 0, .m = 0, .szx = 6, .part_len = 10};
 uint16_t last_block1_tid = 0;
 
 unsigned int last_block_num;
-unsigned int total_payload_sent = 0;
-unsigned int total_missing_payload = 0;
-
-uint8_t request_tag = 0;
 
 unsigned long count_total_block;
 unsigned long count_missing_block;
@@ -112,14 +108,13 @@ void wifi_disconnect();
 int64_t tick_device_monitor = 0;
 int64_t tick_status_data = 0;
 int64_t tick_send_image = 0;
-
 int64_t tick_get_throughput_prediction = 0;
 
 void prepare_device_monitor_session(coap_session_t **session, int64_t *tick);
 void send_device_monitor(coap_session_t *session, int64_t *tick);
 void prepare_status_data_session(coap_session_t **session, int64_t *tick);
 void send_status_data(coap_session_t *session, int64_t *tick);
-void prepare_image_session(coap_context_t *ctx,coap_session_t **session, int64_t *tick);
+void prepare_session(coap_context_t *ctx,coap_session_t **session, int64_t *tick);
 void send_image(coap_session_t *session, int64_t *tick);
 void send_image_continue(coap_session_t *session, int64_t *tick);
 
@@ -312,84 +307,47 @@ get_session(
 
 void coap_client_server(void *p) {
     ESP_LOGI(TAG, "CoAP client running!");
-    coap_context_t *ctx = NULL;
-    request_tag = rand();
-    static coap_uri_t uri;
-    static coap_str_const_t server;
-    uint16_t port = COAP_DEFAULT_PORT;
-    coap_endpoint_t *ep = NULL;
-    
-    coap_address_t dst;
-    int res;
-   
-    coap_session_t *session = NULL;
+    coap_context_t *ctx = NULL;    
+    coap_session_t *session_image = NULL;
+    coap_session_t *session_tp = NULL;
 
-    if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1)
-    {
-      ESP_LOGE(TAG, "CoAP server uri error"); 
-    }
-
-    coap_resource_t *controller_resource = NULL;
+    /*INITIATE COAP */
     coap_startup();
     coap_set_log_level(COAP_LOG_DEFAULT_LEVEL);
-
     if (!coap_debug_set_packet_loss(COAP_DEBUG_PACKET_LOSS)) {
         coap_log(LOG_NOTICE, "Cannot add debug packet loss!\n");
         ESP_ERROR_CHECK(-1);
     }
-
-    //coap_endpoint_t *ep = NULL;
-
-    server = uri.host;
-   
-    /* resolve destination address where server should be sent */
-    coap_address_init(&dst);
-    res = resolve_address(&server, &dst.addr.sa);
-    if (res < 0) {
-      fprintf(stderr, "failed to resolve address\n");
-      exit(-1);
-    }
-    dst.size = res;
-    dst.addr.sin.sin_port = htons(COAP_DEFAULT_PORT);
-
+    /*INITIATE CONTEXT */
     ctx = coap_new_context(NULL);
     if (!ctx) {
         coap_log(LOG_NOTICE, "coap_new_context() failed\n");
     }
     coap_context_set_keepalive(ctx, 0);
     coap_context_set_block_mode(ctx,COAP_BLOCK_USE_LIBCOAP);
-    session = get_session(
-      ctx,NULL, "0",COAP_PROTO_UDP,
-      &dst,NULL,0,NULL,0
-    );
-
-    if ( !session ) {
-      coap_log( LOG_EMERG, "cannot create client session\n" );
-    }
-    coap_session_init_token(session, base_token.length, base_token.s);
-
+    /*INITIATE RESPONSE HANDLER */
+    coap_register_response_handler(ctx, client_response_handler);
+    coap_register_nack_handler(ctx, client_nack_handler);
+    /*ENSURE CONNECT TO AP */
     while (!is_connected) {
         vTaskDelay(0.5 * 1000 / portTICK_RATE_MS);
     }
 
-    coap_register_response_handler(ctx, client_response_handler);
-    coap_register_nack_handler(ctx, client_nack_handler);
-
     //prepare_status_data_session(&session_status, &tick_status_data);
     //prepare_device_monitor_session(&session_device, &tick_device_monitor);
-    //prepare_image_session(ctx,&session_image, &tick_send_image);
-    //prepare_get_throughput_prediction(ctx,&session_throughput_prediction, &tick_get_throughput_prediction);
+    prepare_session(ctx,&session_image, &tick_send_image); 
+    prepare_session(ctx,&session_tp, &tick_get_throughput_prediction);
 
     while (1) {
         if (is_connected) {
             //send_device_monitor(session_device, &tick_device_monitor);
             if (is_sensing_active) {
-                send_image(session, &tick_send_image);
-                //get_throughput_prediction(session_throughput_prediction, &tick_get_throughput_prediction);
+                send_image(session_image, &tick_send_image);
+                get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
             }        
             wait_ms = 60000;
             while (image_resp_wait) {
-                int result = coap_io_process(ctx, wait_ms > 500 ? 500 : wait_ms);
+                int result = coap_io_process(ctx, wait_ms > 300 ? 300 : wait_ms);
                 if (result >= 0) {
                     if (result >= wait_ms) {
                         ESP_LOGE(TAG, "No response from server");
@@ -400,7 +358,7 @@ void coap_client_server(void *p) {
                 }
             } 
             esp_camera_fb_return(image);
-            vTaskDelay(60 / portTICK_RATE_MS);
+            vTaskDelay(30 / portTICK_RATE_MS);
             
         } else {
             coap_log(LOG_NOTICE, "Waiting for wifi connection!\n");
@@ -408,7 +366,6 @@ void coap_client_server(void *p) {
         }
     }
 }
-
 
 void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_value) {
     // The order is:
@@ -443,58 +400,77 @@ void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_v
     }
 }
 
+
 static coap_response_t client_response_handler(coap_session_t *session,
                                     const coap_pdu_t *sent, const coap_pdu_t *received,
                                     const coap_mid_t id) {
     coap_pdu_t *pdu = NULL;
     coap_opt_t *control_opt;
-    uint8_t control_opt_value;
-    coap_opt_t *block_opt;
-    coap_opt_iterator_t opt_iter;
+    uint8_t* control_opt_value;
+    coap_opt_t *block_opt; //ok
+    coap_opt_iterator_t opt_iter; //ook
     unsigned char buf[4];
     size_t len;
     const unsigned char *databuf = NULL;
     coap_mid_t tid;
-
+   
     coap_block_missing_t missing_block_opt;
-
     
     coap_pdu_code_t rcv_code = coap_pdu_get_code(received);
-  coap_pdu_type_t rcv_type = coap_pdu_get_type(received);
+    coap_pdu_type_t rcv_type = coap_pdu_get_type(received);
+    coap_bin_const_t token = coap_pdu_get_token(received);
+    coap_string_t *uriPath = coap_get_uri_path(received);
+    
     const unsigned char *data = NULL;
     size_t data_len;
     size_t offset;
     size_t total;
 
-    coap_bin_const_t token = coap_pdu_get_token(received);
+    
     if (!track_check_token(&token)) {
-    /* drop if this was just some message, or send RST in case of notification */
-    if (!sent && (rcv_type == COAP_MESSAGE_CON ||
-                  rcv_type == COAP_MESSAGE_NON)) {
-      /* Cause a CoAP RST to be sent */
-      return COAP_RESPONSE_FAIL;
+     
+      /* drop if this was just some message, or send RST in case of notification */
+      if (!sent && (rcv_type == COAP_MESSAGE_CON ||
+                    rcv_type == COAP_MESSAGE_NON)) {
+        /* Cause a CoAP RST to be sent */
+        return COAP_RESPONSE_FAIL;
+      }
+      return COAP_RESPONSE_OK;
     }
-    return COAP_RESPONSE_OK;
-  }
-
+  if (rcv_type == COAP_MESSAGE_RST) {
+      coap_log(LOG_INFO, "got RST\n");
+      return COAP_RESPONSE_OK;
+    }
     /* output the received data, if any */
+
+  block_opt = coap_check_option(received, COAP_OPTION_URI_PATH, &opt_iter);
+
   if (COAP_RESPONSE_CLASS(rcv_code) == 2) {
-    image_resp_wait = 0;
+
+
+    if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
+      //doing something
+    } else if (strncmp((const char*)uriPath->s,"image",5) == 0){ //handle image
+      image_resp_wait = 0;
+    } else {
+      image_resp_wait = 0;
+    }
+    
     /* set obs timer if we have successfully subscribed a resource */
     if (doing_observe && !obs_started &&
-        coap_check_option(received, COAP_OPTION_OBSERVE, &opt_iter)) {
+    coap_check_option(received, COAP_OPTION_OBSERVE, &opt_iter)) {
       coap_log(LOG_DEBUG,
-               "observation relationship established, set timeout to %d\n",
-               obs_seconds);
+          "observation relationship established, set timeout to %d\n",
+          obs_seconds);
       obs_started = 1;
       obs_ms = obs_seconds * 1000;
       obs_ms_reset = 1;
     }
 
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
-      //append_to_output(databuf, len);
-      //if ((len + offset == total) && add_nl)
-        //append_to_output((const uint8_t*)"\n", 1);
+      printf("\nTES\n");
+      printf("%s\n",databuf);
+      
     }
 
     /* Check if Block2 option is set */
@@ -508,6 +484,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
                                   COAP_OPTION_OBSERVE, &opt_iter) == NULL : 1;
       }
       if(COAP_OPT_BLOCK_MORE(block_opt)) {
+        printf("\nASKSASJJSA\n\n");
         wait_ms = 60 * 1000;
         wait_ms_reset = 1;
         doing_getting_block = 1;
@@ -553,7 +530,6 @@ static void client_nack_handler(coap_session_t *session,const coap_pdu_t *sent,c
     }
 }
 
-
 void wifi_disconnect() {
     vTaskDelay(3 * 1000 / portTICK_RATE_MS);
     // ESP_ERROR_CHECK(esp_wifi_deauth_sta(0));
@@ -561,7 +537,6 @@ void wifi_disconnect() {
     ESP_ERROR_CHECK(esp_wifi_disconnect());
     // vTaskDelay(1 * 1000 / portTICK_RATE_MS);
     // ESP_ERROR_CHECK(esp_wifi_stop());
-    // vTaskDelay(1 * 1000 / portTICK_RATE_MS);
     // esp_restart();
     ESP_LOGI(TAG, "RESTARTING ESP32");
     vTaskDelay(3 * 1000 / portTICK_RATE_MS);
@@ -570,85 +545,10 @@ void wifi_disconnect() {
 }
 
 void prepare_device_monitor_session(coap_session_t **session, int64_t *tick) {
-    coap_address_t controller_addr;
-
-    coap_address_init(&controller_addr);
-    controller_addr.addr.sin.sin_family = AF_INET;
-    controller_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
-    controller_addr.addr.sin.sin_addr.s_addr = CONTROLLER_ADDRESS;
-
-    *session = coap_new_client_session(ctx, NULL, &controller_addr, COAP_PROTO_UDP);
-    if (!*session) {
-        coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-        coap_session_release(*session);
-    }
-
-    *tick = esp_timer_get_time();
+  
 }
 
 void send_device_monitor(coap_session_t *session, int64_t *tick) {
-    free_heap = esp_get_free_heap_size();
-    count_free_heap++;
-    count_free_heap_sec++;
-
-    average_free_heap = average_free_heap + ((free_heap - average_free_heap) / count_free_heap);
-    average_free_heap_sec = average_free_heap_sec + ((free_heap - average_free_heap_sec) / count_free_heap_sec);
-
-    int64_t current_time;
-
-    current_time = esp_timer_get_time();
-
-    if (current_time - *tick > 1 * 1000000) {
-        *tick = current_time;
-
-        wifi_ap_record_t ap_record;
-
-        esp_wifi_sta_get_ap_info(&ap_record);
-        rssi = ap_record.rssi;
-
-        time_t ntp_time;
-        time(&ntp_time);
-
-        coap_address_t controller_addr;
-        coap_address_init(&controller_addr);
-        controller_addr.addr.sin.sin_family = AF_INET;
-        controller_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
-        controller_addr.addr.sin.sin_addr.s_addr = CONTROLLER_ADDRESS;
-
-        coap_pdu_t *pdu;
-
-        pdu = coap_new_pdu(COAP_MESSAGE_NON,
-                             COAP_REQUEST_CODE_PUT, session);
-        if (!pdu){
-            ESP_LOGE(TAG, "coap_new_pdu() failed");
-        }
-        uint8_t optval = 21;
-        coap_add_option(pdu, COAP_OPTION_CONTROL, 1, &optval);
-
-        uint8_t data[55];
-        memcpy(data, ap_mac, 6);
-        memcpy(data + 6, &ip, 4);
-        memcpy(data + 6 + 4, &ntp_time, 4);
-        memcpy(data + 6 + 4 + 4, &current_time, 8);
-        memcpy(data + 6 + 4 + 4 + 8, &count_monitor_device, 4);
-        memcpy(data + 6 + 4 + 4 + 8 + 4, &count_free_heap, 4);
-        memcpy(data + 6 + 4 + 4 + 8 + 4 + 4, &count_free_heap_sec, 4);
-        memcpy(data + 6 + 4 + 4 + 8 + 4 + 4 + 4, &free_heap, 4);
-        memcpy(data + 6 + 4 + 4 + 8 + 4 + 4 + 4 + 4, &average_free_heap, 8);
-        memcpy(data + 6 + 4 + 4 + 8 + 4 + 4 + 4 + 4 + 8, &average_free_heap_sec, 8);
-        memcpy(data + 6 + 4 + 4 + 8 + 4 + 4 + 4 + 4 + 8 + 8, &rssi, 1);
-
-        coap_add_data(pdu, 55, data);
-
-        coap_send(session, pdu);
-
-        coap_log(LOG_NOTICE, MACSTR ",%d,%ld,%lld,%d,%lld,%lld,%d,%lf,%lf,%d\n", MAC2STR(ap_mac), ip, ntp_time, current_time, count_monitor_device, count_free_heap, count_free_heap_sec, free_heap, average_free_heap, average_free_heap_sec, rssi);
-
-        average_free_heap_sec = 0;
-        count_free_heap_sec = 0;
-
-        count_monitor_device++;
-    }
 }
 
 void prepare_status_data_session(coap_session_t **session, int64_t *tick) {
@@ -805,41 +705,44 @@ static coap_address_t * coap_get_address(coap_uri_t *uri)
    return &dst_addr;
 }
 
-void prepare_image_session(coap_context_t *ctx, coap_session_t **session, int64_t *tick) {
-    coap_address_t *dst_addr;
+void prepare_session(coap_context_t *ctx, coap_session_t **session, int64_t *tick) {
+    coap_address_t dst;
     static coap_uri_t uri;
+    static coap_str_const_t server;
+    int res;
 
     if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1)
-    {
-      ESP_LOGE(TAG, "CoAP server uri error");
-      
+      {ESP_LOGE(TAG, "CoAP server uri error"); }
+
+    server = uri.host;
+    coap_address_init(&dst);
+    res = resolve_address(&server, &dst.addr.sa);
+    if (res < 0) {
+      fprintf(stderr, "failed to resolve address\n");
+      exit(-1);
     }
-    dst_addr = coap_get_address(&uri);
-    *session = coap_new_client_session(
-        ctx, NULL, dst_addr, COAP_PROTO_UDP);
-    if (!*session) {
-        coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-        coap_session_release(*session);
+    dst.size = res;
+    dst.addr.sin.sin_port = htons(COAP_DEFAULT_PORT);
+
+    *session = get_session(
+      ctx,NULL, "0",COAP_PROTO_UDP,
+      &dst,NULL,0,NULL,0
+    );
+
+    if ( !session ) {
+      coap_log( LOG_EMERG, "cannot create client session\n" );
     }
+    coap_session_init_token(*session, base_token.length, base_token.s);
     *tick = esp_timer_get_time();
 }
 
 void send_image(coap_session_t *session, int64_t *tick) {
         
     coap_pdu_t *request = NULL;
-    uint8_t token[8];//ok
-    size_t tokenlen; //ok
-    payload.length = 0; //ok
-    payload.s = NULL; //ok
-    total_payload_sent = 0;
-    total_missing_payload = 0;
-
-    count_total_block = 0;
-    count_missing_block = 0;
-    count_retransmission = 0;
-
-    request_tag++;
-    request_tag = request_tag == 0 ? request_tag + 1 : request_tag;
+    uint8_t token[8];
+    size_t tokenlen; 
+    payload.length = 0;
+    payload.s = NULL; 
 
     coap_optlist_t *optlist = NULL;
 
@@ -853,13 +756,9 @@ void send_image(coap_session_t *session, int64_t *tick) {
     payload.s = image->buf;
     payload.length = image->len;
 
-    int remaining_payload =
-        coap_get_remaining_payload_number(payload.length, -1, block.szx);
-
     send_duration = esp_timer_get_time();
     coap_log(LOG_NOTICE, "Start sending image, start tick %lld\n", send_duration);
 
-    // count_total_block++;
     if (!(request = coap_new_pdu(COAP_MESSAGE_CON,COAP_REQUEST_CODE_PUT, session))) {  
         ESP_LOGE(TAG, "coap_new_pdu() failed");
     }                        
@@ -885,27 +784,30 @@ clean_up:
       
 }
 
-void prepare_get_throughput_prediction(coap_context_t *ctx,coap_session_t **session, int64_t *tick) {
-    coap_address_t server_addr;
-    coap_address_t *dst_addr;
-    static coap_uri_t uri;
+// void prepare_get_throughput_prediction(coap_context_t *ctx,coap_session_t **session, int64_t *tick) {
+//     coap_address_t server_addr;
+//     coap_address_t *dst_addr;
+//     static coap_uri_t uri;
 
-    if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1)
-    {
-      ESP_LOGE(TAG, "CoAP server uri error");    
-    }
-    dst_addr = coap_get_address(&uri);
-    *session = coap_new_client_session(ctx, NULL, dst_addr, COAP_PROTO_UDP);
-    if (!*session) {
-        coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-        coap_session_release(*session);
-    }
-    *tick = esp_timer_get_time();
-}
+//     if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1)
+//     {
+//       ESP_LOGE(TAG, "CoAP server uri error");    
+//     }
+//     dst_addr = coap_get_address(&uri);
+//     *session = coap_new_client_session(ctx, NULL, dst_addr, COAP_PROTO_UDP);
+//     if (!*session) {
+//         coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
+//         coap_session_release(*session);
+//     }
+//     *tick = esp_timer_get_time();
+// }
 
 void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
+    
+    uint8_t token[8];
+    size_t tokenlen; 
     coap_pdu_t *pdu = NULL;
-
+    
     if (esp_timer_get_time() - *tick > 5000000) {
         *tick = esp_timer_get_time();
        
@@ -913,7 +815,15 @@ void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
         if (!pdu){
             ESP_LOGE(TAG, "coap_new_pdu() failed");
         }
+
+        coap_session_new_token(session, &tokenlen, token);
+        track_new_token(tokenlen, token);
+        if (!coap_add_token(pdu, tokenlen, token)) {
+            coap_log(LOG_DEBUG, "cannot add token to request\n");
+        }
         coap_add_option(pdu, COAP_OPTION_URI_PATH, 5, (uint8_t *)tp_path);
+       
+        image_resp_wait = 1;
         coap_send(session, pdu);
 
     }
