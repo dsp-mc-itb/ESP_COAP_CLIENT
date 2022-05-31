@@ -1,8 +1,4 @@
 
-// NOTES
-// NOTES: Put this code into esp32_node.h and edit there
-// NOTES
-
 #pragma once
 
 #include "esp_netif.h"
@@ -12,32 +8,29 @@
 #include "esp_camera.h"
 
 #define PARAM_NAMESPACE "esp32_softwmsn"
-
 #define SUPPORT_SENSING 1
-
 #define COAP_LOG_DEFAULT_LEVEL 0
-
 #define COAP_DEBUG_PACKET_LOSS "0%%"
 // #define COAP_DEBUG_PACKET_LOSS "11,12,13,14,15,16,17"
 
-// #define CONFIG_CAMERA_MODEL_ESP_EYE 1
-#define CONFIG_CAMERA_MODEL_AI_THINKER 1
+#define CONFIG_CAMERA_MODEL_ESP_EYE 1
+//#define CONFIG_CAMERA_MODEL_AI_THINKER 1
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define ESP_DEFAULT_SSID "TP-Link_AC44"
+#define ESP_DEFAULT_SSID "dd-wrt"
 #define ESP_DEFAULT_BSSID \
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
 #define ESP_DEFAULT_ROUTER_BSSID \
     { 0x3C, 0x84, 0x6A, 0xD2, 0xAC, 0x44 }
-#define ESP_DEFAULT_PASSWD "16476240"
-#define ESP_DEFAULT_AP_SSID "TP-Link_AC44"
-#define ESP_DEFAULT_AP_PASSWD "16476240"
+#define ESP_DEFAULT_PASSWD "dspmcitb"
+#define ESP_DEFAULT_AP_SSID ""
+#define ESP_DEFAULT_AP_PASSWD ""
 #define ESP_DEFAULT_STATUS_DATA_TRANSFER_TYPE 0
 #define ESP_DEFAULT_IS_SENSING_ACTIVE 0
-#define ESP_DEFAULT_IMAGE_SIZE FRAMESIZE_96X96
+#define ESP_DEFAULT_IMAGE_SIZE FRAMESIZE_HD
 #define ESP_DEFAULT_IMAGE_FORMAT PIXFORMAT_JPEG
 #define ESP_DEFAULT_DATA_SEND_PERIOD 0
 #define ESP_DEFAULT_BLOCK_SIZE 6

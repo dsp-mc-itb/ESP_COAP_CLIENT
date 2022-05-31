@@ -342,11 +342,14 @@ void coap_client_server(void *p) {
         if (is_connected) {
             //send_device_monitor(session_device, &tick_device_monitor);
             if (is_sensing_active) {
+
                 send_image(session_image, &tick_send_image);
                 get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
             }        
             wait_ms = 60000;
+            
             while (image_resp_wait) {
+
                 int result = coap_io_process(ctx, wait_ms > 300 ? 300 : wait_ms);
                 if (result >= 0) {
                     if (result >= wait_ms) {
@@ -356,7 +359,8 @@ void coap_client_server(void *p) {
                         wait_ms -= result;
                     }
                 }
-            } 
+            }
+
             esp_camera_fb_return(image);
             vTaskDelay(30 / portTICK_RATE_MS);
             
