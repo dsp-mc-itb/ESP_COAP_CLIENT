@@ -83,6 +83,7 @@ double average_free_heap = 0;
 int8_t rssi = 0;
 
 char *image_path = "image";
+char *delay_path = "delay";
 char *tp_path = "troug";
 
 coap_session_t *session_status = NULL;
@@ -109,6 +110,7 @@ int64_t tick_device_monitor = 0;
 int64_t tick_status_data = 0;
 int64_t tick_send_image = 0;
 int64_t tick_get_throughput_prediction = 0;
+int64_t tick_put_delay = 0;
 
 void prepare_device_monitor_session(coap_session_t **session, int64_t *tick);
 void send_device_monitor(coap_session_t *session, int64_t *tick);
@@ -116,6 +118,7 @@ void prepare_status_data_session(coap_session_t **session, int64_t *tick);
 void send_status_data(coap_session_t *session, int64_t *tick);
 void prepare_session(coap_context_t *ctx,coap_session_t **session, int64_t *tick);
 void send_image(coap_session_t *session, int64_t *tick);
+void send_delay(coap_session_t *session, int64_t *tick);
 void send_image_continue(coap_session_t *session, int64_t *tick);
 
 void prepare_get_throughput_prediction(coap_context_t *ctx,coap_session_t **session, int64_t *tick);
@@ -310,6 +313,7 @@ void coap_client_server(void *p) {
     coap_context_t *ctx = NULL;    
     coap_session_t *session_image = NULL;
     coap_session_t *session_tp = NULL;
+    coap_session_t *session_delay = NULL;
 
     /*INITIATE COAP */
     coap_startup();
@@ -337,6 +341,7 @@ void coap_client_server(void *p) {
     //prepare_device_monitor_session(&session_device, &tick_device_monitor);
     prepare_session(ctx,&session_image, &tick_send_image); 
     prepare_session(ctx,&session_tp, &tick_get_throughput_prediction);
+    prepare_session(ctx,&session_delay, &tick_put_delay);
 
     while (1) {
         if (is_connected) {
@@ -360,6 +365,8 @@ void coap_client_server(void *p) {
                     }
                 }
             }
+            send_duration = esp_timer_get_time() - send_duration;
+            send_delay(session_delay, &tick_put_delay);
 
             esp_camera_fb_return(image);
             vTaskDelay(30 / portTICK_RATE_MS);
@@ -472,7 +479,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
     }
 
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
-      printf("\nTES\n");
+      
       printf("%s\n",databuf);
       
     }
@@ -488,7 +495,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
                                   COAP_OPTION_OBSERVE, &opt_iter) == NULL : 1;
       }
       if(COAP_OPT_BLOCK_MORE(block_opt)) {
-        printf("\nASKSASJJSA\n\n");
+        
         wait_ms = 60 * 1000;
         wait_ms_reset = 1;
         doing_getting_block = 1;
@@ -740,6 +747,41 @@ void prepare_session(coap_context_t *ctx, coap_session_t **session, int64_t *tic
     *tick = esp_timer_get_time();
 }
 
+void send_delay(coap_session_t *session, int64_t *tick) {
+        
+    coap_pdu_t *request = NULL;
+    uint8_t token[8];
+    size_t tokenlen; 
+  
+    coap_optlist_t *optlist = NULL;
+
+    //send_duration = esp_timer_get_time();
+
+    if (!(request = coap_new_pdu(COAP_MESSAGE_NON,COAP_REQUEST_CODE_PUT, session))) {  
+        ESP_LOGE(TAG, "coap_new_pdu() failed");
+        goto clean_up;
+    }                        
+    
+    coap_session_new_token(session, &tokenlen, token);
+    track_new_token(tokenlen, token);
+    if (!coap_add_token(request, tokenlen, token)) {
+        coap_log(LOG_DEBUG, "cannot add token to request\n");
+        goto clean_up;
+    }
+    coap_add_option(request, COAP_OPTION_URI_PATH, 5, (uint8_t *)delay_path);
+    coap_add_data_large_request(session,request, sizeof(send_duration),(uint8_t *)&send_duration , NULL, NULL);
+    
+    coap_send(session, request);
+   
+clean_up:
+    // coap_log(LOG_NOTICE, "Clean Up %lld\n", send_duration);
+    if (optlist) {
+        coap_delete_optlist(optlist);
+        optlist = NULL;
+    }
+      
+}
+
 void send_image(coap_session_t *session, int64_t *tick) {
         
     coap_pdu_t *request = NULL;
@@ -787,7 +829,6 @@ clean_up:
     }
       
 }
-
 // void prepare_get_throughput_prediction(coap_context_t *ctx,coap_session_t **session, int64_t *tick) {
 //     coap_address_t server_addr;
 //     coap_address_t *dst_addr;
