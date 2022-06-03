@@ -770,7 +770,7 @@ void send_delay(coap_session_t *session, int64_t *tick) {
         goto clean_up;
     }
     coap_add_option(request, COAP_OPTION_URI_PATH, 5, (uint8_t *)delay_path);
-    double d = (double)send_duration/(1024*1024);
+    double d = (double)send_duration/(1000*1000);
     throughput = image->len / d;
   
     // throughput = ((double*)image->len)/((double*)send_duration);
