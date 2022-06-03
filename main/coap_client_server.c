@@ -367,9 +367,10 @@ void coap_client_server(void *p) {
             }
             send_duration = esp_timer_get_time() - send_duration;
             send_delay(session_delay, &tick_put_delay);
-
+            
+            vTaskDelay(15 / portTICK_RATE_MS);
             esp_camera_fb_return(image);
-            vTaskDelay(30 / portTICK_RATE_MS);
+            
             
         } else {
             coap_log(LOG_NOTICE, "Waiting for wifi connection!\n");
@@ -754,7 +755,7 @@ void send_delay(coap_session_t *session, int64_t *tick) {
     size_t tokenlen; 
   
     coap_optlist_t *optlist = NULL;
-
+    double throughput = 0;
     //send_duration = esp_timer_get_time();
 
     if (!(request = coap_new_pdu(COAP_MESSAGE_NON,COAP_REQUEST_CODE_PUT, session))) {  
@@ -769,7 +770,12 @@ void send_delay(coap_session_t *session, int64_t *tick) {
         goto clean_up;
     }
     coap_add_option(request, COAP_OPTION_URI_PATH, 5, (uint8_t *)delay_path);
-    coap_add_data_large_request(session,request, sizeof(send_duration),(uint8_t *)&send_duration , NULL, NULL);
+    double d = (double)send_duration/(1024*1024);
+    throughput = image->len / d;
+  
+    // throughput = ((double*)image->len)/((double*)send_duration);
+    
+    coap_add_data_large_request(session,request, sizeof(throughput),(uint8_t *)&throughput , NULL, NULL);
     
     coap_send(session, request);
    
