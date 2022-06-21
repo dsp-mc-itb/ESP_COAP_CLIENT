@@ -34,7 +34,8 @@ const static char *TAG = "CoAP_server_client";
 
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
 
-const char *server_uri = "coap://192.168.1.113"; // alamat server coap
+//const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
+const char *server_uri = "coap://192.168.9.4"; // alamat server coap TP LINK
 static unsigned char _token_data[8];
 coap_binary_t base_token = { 0, _token_data };
 int64_t send_duration = 0;
@@ -367,8 +368,6 @@ void coap_client_server(void *p) {
             }
             send_duration = esp_timer_get_time() - send_duration;
             send_delay(session_delay, &tick_put_delay);
-            
-            vTaskDelay(15 / portTICK_RATE_MS);
             esp_camera_fb_return(image);
             
             
@@ -462,6 +461,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
 
     if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
       //doing something
+
     } else if (strncmp((const char*)uriPath->s,"image",5) == 0){ //handle image
       image_resp_wait = 0;
     } else {
@@ -480,8 +480,8 @@ static coap_response_t client_response_handler(coap_session_t *session,
     }
 
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
-      
-      printf("%s\n",databuf);
+      printf("len : %d\n",len);
+      printf("Prediction : %s\n",databuf);
       
     }
 
