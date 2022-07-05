@@ -1,10 +1,21 @@
-# ESP32 Soft-WMSN Whole Description
+# ESP32 COAP CLIENT
 
-Consists of different branches:
-1. master
-   1. Used esp-idf: esp-idf-v4.2-release-090221-mod-dhcps-coap-app
-2. riset-itb-block-wise
-   1. esp-idf-v4.2-release-090221-mod-dhcps-coap-app
-3. riset-itb-napt
-   1. esp-idf-v4.2-release-090221-mod-napt-app
+## penggunaan library
+
+1. ESP IDF : V4.4.1
+2. ESP CAM : V2.0.0
+
+## Usage
+
+1. Create file data_collection.h and esp32_node.h from default file
+
+2. export ESP idf
+3. idf.py build
+4. idf.py flash
+
+- Dont forget to run COAP Server 
+https://github.com/dsp-mc-itb/ESP_COAP_SERVER
+and Troughput Prediction App
+https://github.com/dsp-mc-itb/Raspi-TP-Prediction-Main
+
 
