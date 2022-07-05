@@ -518,6 +518,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
         }
       }
       fprintf(stderr, "\n");
+      return COAP_RESPONSE_FAIL;
     }
 
   }
