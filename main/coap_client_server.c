@@ -33,9 +33,9 @@
 const static char *TAG = "CoAP_server_client";
 
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
-
-//const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
-const char *server_uri = "coap://192.168.9.4"; // alamat server coap TP LINK
+#define size_of_list_frame 12
+const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
+//const char *server_uri = "coap://192.168.9.4"; // alamat server coap TP LINK
 static unsigned char _token_data[8];
 coap_binary_t base_token = { 0, _token_data };
 int64_t send_duration = 0;
@@ -70,7 +70,7 @@ unsigned int obs_seconds = 30;
 int obs_started = 0;
 int doing_observe = 0;
 static int is_mcast = 0;
-
+static int frameRate = 5;
 camera_fb_t *image = NULL;
 
 coap_context_t *ctx = NULL;
@@ -95,7 +95,7 @@ coap_session_t *session_throughput_prediction = NULL;
 
 uint8_t nack_flag = 0;
 
-void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_value);
+void change_dynamic_parameter(char* dynamic_value);
 static coap_response_t client_response_handler(coap_session_t *session,
                                     const coap_pdu_t *sent, const coap_pdu_t *received,
                                     const coap_mid_t id);
@@ -378,37 +378,31 @@ void coap_client_server(void *p) {
     }
 }
 
-void change_dynamic_parameter(unsigned long queue_number, unsigned int dynamic_value) {
-    // The order is:
-    // 1. Block size
-    // 2. Block sequence length
-    // 3. Image size
-    unsigned long scaled_queue = queue_number / dynamic_value;
-
-    if (DATA_COLLECTION_DEFAULT_BLOCK_SIZE == DYNAMIC_PARAMETER) {
-        block_size = scaled_queue % MULTIPLIER_BLOCK_SIZE;
-    }
-    if (DATA_COLLECTION_DEFAULT_BLOCK_SEQ_LEN == DYNAMIC_PARAMETER) {
-        if (DATA_COLLECTION_DEFAULT_BLOCK_SIZE == DYNAMIC_PARAMETER) {
-            block_seq_len = ((scaled_queue / MULTIPLIER_BLOCK_SIZE) % MULTIPLIER_BLOCK_PART_LEN) + 1;  // Add 1 for sequence length cuz the minimum value is 1 and maximum value is MULTIPLIER_BLOCK_PART_LEN
-        } else {
-            block_seq_len = scaled_queue % MULTIPLIER_BLOCK_PART_LEN;
-        }
-    }
-    if (DATA_COLLECTION_DEFAULT_IMAGE_SIZE == DYNAMIC_PARAMETER) {
-        int total_multiplier = 1;
-        total_multiplier = DATA_COLLECTION_DEFAULT_BLOCK_SIZE == DYNAMIC_PARAMETER ? total_multiplier * MULTIPLIER_BLOCK_SIZE : total_multiplier;
-        total_multiplier = DATA_COLLECTION_DEFAULT_BLOCK_SEQ_LEN == DYNAMIC_PARAMETER ? total_multiplier * MULTIPLIER_BLOCK_PART_LEN : total_multiplier;
-        image_size = (scaled_queue / total_multiplier) % MULTIPLIER_IMAGE_SIZE;
-
+void change_dynamic_parameter(char* dynamic_value) {
+    
         sensor_t *s = esp_camera_sensor_get();
-        set_config_param_int("img_sz", image_size);
-        s->set_framesize(s, image_size);
-
-        printf("total_multiplier: %d\n", total_multiplier);
-        printf("image_size: %d\n", image_size);
-        printf("frame_size: %d\n", s->status.framesize);
-    }
+        int tp = atoi(dynamic_value);
+        float sizeAllowed = tp/frameRate;
+       
+        int list_of_frame[size_of_list_frame] = {9216,19200,25344,42240,57600,76800,118400,153600,307200,480000,786432,921600};
+        int min_size = 1700;
+        int max_size = 30000;
+        int kons = 921600 - 9216;
+        float beta = min_size - (max_size-min_size)*9216/kons;
+        float x = (sizeAllowed - beta)*kons/(max_size-min_size);
+        printf("hasil :%f\n",x);
+        int i = 0;
+        int output_expected = 11;
+        for (i = size_of_list_frame -1; i >=0; i--){
+          if (x > list_of_frame[i]) {
+            output_expected = i;
+            break;
+          }
+        }
+        s->set_framesize(s, output_expected);
+        printf("Change image frame to : %d\n", output_expected);
+        printf("frame_size now: %d\n", s->status.framesize);
+    
 }
 
 
@@ -460,8 +454,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
 
 
     if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
-      //doing something
-
+    
     } else if (strncmp((const char*)uriPath->s,"image",5) == 0){ //handle image
       image_resp_wait = 0;
     } else {
@@ -480,9 +473,17 @@ static coap_response_t client_response_handler(coap_session_t *session,
     }
 
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
-      printf("len : %d\n",len);
-      printf("Prediction : %s\n",databuf);
+      if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
+      //doing something
       
+      printf("len asli: %d\n",len);
+      
+      char data[8];
+      strncpy(data, (char *)databuf, len);
+      printf("Prediction asli : %s\n",data);
+      change_dynamic_parameter(data);
+      printf("EXit\n");
+      }   
     }
 
     /* Check if Block2 option is set */
@@ -510,7 +511,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
   } else {      /* no 2.05 */
     /* check if an error was signaled and output payload if so */
     if (COAP_RESPONSE_CLASS(rcv_code) >= 4) {
-      fprintf(stderr, "%d.%02d", COAP_RESPONSE_CLASS(rcv_code),
+      fprintf(stderr, "err %d.%02d", COAP_RESPONSE_CLASS(rcv_code),
               rcv_code & 0x1F);
       if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
         fprintf(stderr, " ");
