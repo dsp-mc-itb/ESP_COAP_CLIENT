@@ -405,7 +405,6 @@ void change_dynamic_parameter(char* dynamic_value) {
     
 }
 
-
 static coap_response_t client_response_handler(coap_session_t *session,
                                     const coap_pdu_t *sent, const coap_pdu_t *received,
                                     const coap_mid_t id) {
@@ -475,14 +474,12 @@ static coap_response_t client_response_handler(coap_session_t *session,
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
       if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
       //doing something
-      
       printf("len asli: %d\n",len);
-      
       char data[8];
       strncpy(data, (char *)databuf, len);
       printf("Prediction asli : %s\n",data);
       change_dynamic_parameter(data);
-      printf("EXit\n");
+      //printf("EXit\n");
       }   
     }
 
@@ -566,7 +563,6 @@ void send_device_monitor(coap_session_t *session, int64_t *tick) {
 
 void prepare_status_data_session(coap_session_t **session, int64_t *tick) {
     coap_address_t controller_addr;
-
 
     coap_address_init(&controller_addr);
     controller_addr.addr.sin.sin_family = AF_INET;
@@ -777,7 +773,6 @@ void send_delay(coap_session_t *session, int64_t *tick) {
     // throughput = ((double*)image->len)/((double*)send_duration);
     
     coap_add_data_large_request(session,request, sizeof(throughput),(uint8_t *)&throughput , NULL, NULL);
-    
     coap_send(session, request);
    
 clean_up:
@@ -836,23 +831,6 @@ clean_up:
     }
       
 }
-// void prepare_get_throughput_prediction(coap_context_t *ctx,coap_session_t **session, int64_t *tick) {
-//     coap_address_t server_addr;
-//     coap_address_t *dst_addr;
-//     static coap_uri_t uri;
-
-//     if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1)
-//     {
-//       ESP_LOGE(TAG, "CoAP server uri error");    
-//     }
-//     dst_addr = coap_get_address(&uri);
-//     *session = coap_new_client_session(ctx, NULL, dst_addr, COAP_PROTO_UDP);
-//     if (!*session) {
-//         coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-//         coap_session_release(*session);
-//     }
-//     *tick = esp_timer_get_time();
-// }
 
 void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
     
