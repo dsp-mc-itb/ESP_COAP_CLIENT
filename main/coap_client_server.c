@@ -40,13 +40,17 @@ static unsigned char _token_data[8];
 coap_binary_t base_token = { 0, _token_data };
 int64_t send_duration = 0;
 
+int64_t coba_duration = 0;
+int64_t coba_duration2 = 0;
+int64_t coba_duration3 = 0;
+
 static int identity_response_flag = 0;
 
 static int image_resp_wait = 0;
 static int wait_ms;
 
 static coap_string_t payload = {0, NULL}; /* optional payload to send */
-
+int list_of_frame[size_of_list_frame] = {9216,19200,25344,42240,57600,76800,118400,153600,307200,480000,786432,921600};
 typedef unsigned char method_t;
 
 coap_block_mod_t block = {.num = 0, .m = 0, .szx = 6, .part_len = 10};
@@ -115,7 +119,7 @@ int64_t tick_put_delay = 0;
 
 void prepare_device_monitor_session(coap_session_t **session, int64_t *tick);
 void send_device_monitor(coap_session_t *session, int64_t *tick);
-void prepare_status_data_session(coap_session_t **session, int64_t *tick);
+// void prepare_status_data_session(coap_session_t **session, int64_t *tick);
 void send_status_data(coap_session_t *session, int64_t *tick);
 void prepare_session(coap_context_t *ctx,coap_session_t **session, int64_t *tick);
 void send_image(coap_session_t *session, int64_t *tick);
@@ -127,7 +131,7 @@ void get_throughput_prediction(coap_session_t *session, int64_t *tick);
 
 typedef struct {
   coap_binary_t *token;
-  int observe;
+    int observe;
 } track_token;
 
 track_token *tracked_tokens = NULL;
@@ -343,20 +347,23 @@ void coap_client_server(void *p) {
     prepare_session(ctx,&session_image, &tick_send_image); 
     prepare_session(ctx,&session_tp, &tick_get_throughput_prediction);
     prepare_session(ctx,&session_delay, &tick_put_delay);
-
+    //int increment = 0;
     while (1) {
         if (is_connected) {
             //send_device_monitor(session_device, &tick_device_monitor);
             if (is_sensing_active) {
-
+                //increment++;
                 send_image(session_image, &tick_send_image);
-                get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
+                //printf("increment : %d\n",increment);
+                
+                //get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
             }        
             wait_ms = 60000;
-            
+            // coba_duration = esp_timer_get_time();
             while (image_resp_wait) {
 
-                int result = coap_io_process(ctx, wait_ms > 300 ? 300 : wait_ms);
+                int result = coap_io_process(ctx, wait_ms > 400 ? 400 : wait_ms);
+               
                 if (result >= 0) {
                     if (result >= wait_ms) {
                         ESP_LOGE(TAG, "No response from server");
@@ -366,9 +373,9 @@ void coap_client_server(void *p) {
                     }
                 }
             }
-            send_duration = esp_timer_get_time() - send_duration;
-            send_delay(session_delay, &tick_put_delay);
             esp_camera_fb_return(image);
+           
+            //send_delay(session_delay, &tick_put_delay);
             
             
         } else {
@@ -384,15 +391,14 @@ void change_dynamic_parameter(char* dynamic_value) {
         int tp = atoi(dynamic_value);
         float sizeAllowed = tp/frameRate;
        
-        int list_of_frame[size_of_list_frame] = {9216,19200,25344,42240,57600,76800,118400,153600,307200,480000,786432,921600};
         int min_size = 1700;
         int max_size = 30000;
         int kons = 921600 - 9216;
         float beta = min_size - (max_size-min_size)*9216/kons;
         float x = (sizeAllowed - beta)*kons/(max_size-min_size);
-        printf("hasil :%f\n",x);
+        //printf("hasil :%f\n",x);
         int i = 0;
-        int output_expected = 11;
+        int output_expected = 0;
         for (i = size_of_list_frame -1; i >=0; i--){
           if (x > list_of_frame[i]) {
             output_expected = i;
@@ -400,8 +406,8 @@ void change_dynamic_parameter(char* dynamic_value) {
           }
         }
         s->set_framesize(s, output_expected);
-        printf("Change image frame to : %d\n", output_expected);
-        printf("frame_size now: %d\n", s->status.framesize);
+        //printf("Change image frame to : %d\n", output_expected);
+        //printf("frame_size now: %d\n", s->status.framesize);
     
 }
 
@@ -429,8 +435,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
     size_t data_len;
     size_t offset;
     size_t total;
-
-    
+ 
     if (!track_check_token(&token)) {
      
       /* drop if this was just some message, or send RST in case of notification */
@@ -441,7 +446,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
       }
       return COAP_RESPONSE_OK;
     }
-  if (rcv_type == COAP_MESSAGE_RST) {
+    if (rcv_type == COAP_MESSAGE_RST) {
       coap_log(LOG_INFO, "got RST\n");
       return COAP_RESPONSE_OK;
     }
@@ -450,7 +455,6 @@ static coap_response_t client_response_handler(coap_session_t *session,
   block_opt = coap_check_option(received, COAP_OPTION_URI_PATH, &opt_iter);
 
   if (COAP_RESPONSE_CLASS(rcv_code) == 2) {
-
 
     if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
     
@@ -474,10 +478,10 @@ static coap_response_t client_response_handler(coap_session_t *session,
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
       if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
       //doing something
-      printf("len asli: %d\n",len);
+      //printf("len asli: %d\n",len);
       char data[8];
       strncpy(data, (char *)databuf, len);
-      printf("Prediction asli : %s\n",data);
+      //printf("Prediction asli : %s\n",data);
       change_dynamic_parameter(data);
       //printf("EXit\n");
       }   
@@ -562,22 +566,22 @@ void prepare_device_monitor_session(coap_session_t **session, int64_t *tick) {
 void send_device_monitor(coap_session_t *session, int64_t *tick) {
 }
 
-void prepare_status_data_session(coap_session_t **session, int64_t *tick) {
-    coap_address_t controller_addr;
+// void prepare_status_data_session(coap_session_t **session, int64_t *tick) {
+//     coap_address_t controller_addr;
 
-    coap_address_init(&controller_addr);
-    controller_addr.addr.sin.sin_family = AF_INET;
-    controller_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
-    controller_addr.addr.sin.sin_addr.s_addr = CONTROLLER_ADDRESS;
+//     coap_address_init(&controller_addr);
+//     controller_addr.addr.sin.sin_family = AF_INET;
+//     controller_addr.addr.sin.sin_port = htonl(COAP_DEFAULT_PORT);
+//     controller_addr.addr.sin.sin_addr.s_addr = CONTROLLER_ADDRESS;
 
-    *session = coap_new_client_session(ctx, NULL, &controller_addr, COAP_PROTO_UDP);
-    if (!*session) {
-        coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
-        coap_session_release(*session);
-    }
+//     *session = coap_new_client_session(ctx, NULL, &controller_addr, COAP_PROTO_UDP);
+//     if (!*session) {
+//         coap_log(LOG_NOTICE, "coap_new_client_session() failed\n");
+//         coap_session_release(*session);
+//     }
 
-    *tick = esp_timer_get_time();
-}
+//     *tick = esp_timer_get_time();
+// }
 
 void send_status_data(coap_session_t *session, int64_t *tick) {
     if (esp_timer_get_time() - *tick > status_data_transfer_type * 1000000) {
@@ -656,64 +660,64 @@ void send_status_data(coap_session_t *session, int64_t *tick) {
     }
 }
 
-static coap_address_t * coap_get_address(coap_uri_t *uri)
-{
-   static coap_address_t dst_addr;
-   char *phostname = NULL;
-   struct addrinfo hints;
-   struct addrinfo *addrres;
-   int error;
-   char tmpbuf[INET6_ADDRSTRLEN];
+// static coap_address_t * coap_get_address(coap_uri_t *uri)
+// {
+//    static coap_address_t dst_addr;
+//    char *phostname = NULL;
+//    struct addrinfo hints;
+//    struct addrinfo *addrres;
+//    int error;
+//    char tmpbuf[INET6_ADDRSTRLEN];
 
-   phostname = (char *)calloc(1, uri->host.length + 1);
-   if (phostname == NULL)
-   {
-      ESP_LOGE(TAG, "calloc failed");
-      return NULL;
-   }
-   memcpy(phostname, uri->host.s, uri->host.length);
+//    phostname = (char *)calloc(1, uri->host.length + 1);
+//    if (phostname == NULL)
+//    {
+//       ESP_LOGE(TAG, "calloc failed");
+//       return NULL;
+//    }
+//    memcpy(phostname, uri->host.s, uri->host.length);
 
-   memset((char *)&hints, 0, sizeof(hints));
-   hints.ai_socktype = SOCK_DGRAM;
-   hints.ai_family = AF_UNSPEC;
+//    memset((char *)&hints, 0, sizeof(hints));
+//    hints.ai_socktype = SOCK_DGRAM;
+//    hints.ai_family = AF_UNSPEC;
 
-   error = getaddrinfo(phostname, NULL, &hints, &addrres);
-   if (error != 0)
-   {
-      ESP_LOGE(TAG, "DNS lookup failed for destination address %s. error: %d", phostname, error);
-      free(phostname);
-      return NULL;
-   }
-   if (addrres == NULL)
-   {
-      ESP_LOGE(TAG, "DNS lookup %s did not return any addresses", phostname);
-      free(phostname);
-      return NULL;
-   }
-   free(phostname);
-   coap_address_init(&dst_addr);
-   switch (addrres->ai_family)
-   {
-   case AF_INET:
-      memcpy(&dst_addr.addr.sin, addrres->ai_addr, sizeof(dst_addr.addr.sin));
-      dst_addr.addr.sin.sin_port = htons(uri->port);
-      inet_ntop(AF_INET, &dst_addr.addr.sin.sin_addr, tmpbuf, sizeof(tmpbuf));
-      ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
-      break;
-   case AF_INET6:
-      memcpy(&dst_addr.addr.sin6, addrres->ai_addr, sizeof(dst_addr.addr.sin6));
-      dst_addr.addr.sin6.sin6_port = htons(uri->port);
-      inet_ntop(AF_INET6, &dst_addr.addr.sin6.sin6_addr, tmpbuf, sizeof(tmpbuf));
-      ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
-      break;
-   default:
-      ESP_LOGE(TAG, "DNS lookup response failed");
-      return NULL;
-   }
-   freeaddrinfo(addrres);
+//    error = getaddrinfo(phostname, NULL, &hints, &addrres);
+//    if (error != 0)
+//    {
+//       ESP_LOGE(TAG, "DNS lookup failed for destination address %s. error: %d", phostname, error);
+//       free(phostname);
+//       return NULL;
+//    }
+//    if (addrres == NULL)
+//    {
+//       ESP_LOGE(TAG, "DNS lookup %s did not return any addresses", phostname);
+//       free(phostname);
+//       return NULL;
+//    }
+//    free(phostname);
+//    coap_address_init(&dst_addr);
+//    switch (addrres->ai_family)
+//    {
+//    case AF_INET:
+//       memcpy(&dst_addr.addr.sin, addrres->ai_addr, sizeof(dst_addr.addr.sin));
+//       dst_addr.addr.sin.sin_port = htons(uri->port);
+//       inet_ntop(AF_INET, &dst_addr.addr.sin.sin_addr, tmpbuf, sizeof(tmpbuf));
+//       ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
+//       break;
+//    case AF_INET6:
+//       memcpy(&dst_addr.addr.sin6, addrres->ai_addr, sizeof(dst_addr.addr.sin6));
+//       dst_addr.addr.sin6.sin6_port = htons(uri->port);
+//       inet_ntop(AF_INET6, &dst_addr.addr.sin6.sin6_addr, tmpbuf, sizeof(tmpbuf));
+//       ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
+//       break;
+//    default:
+//       ESP_LOGE(TAG, "DNS lookup response failed");
+//       return NULL;
+//    }
+//    freeaddrinfo(addrres);
 
-   return &dst_addr;
-}
+//    return &dst_addr;
+// }
 
 void prepare_session(coap_context_t *ctx, coap_session_t **session, int64_t *tick) {
     coap_address_t dst;
@@ -754,7 +758,6 @@ void send_delay(coap_session_t *session, int64_t *tick) {
   
     coap_optlist_t *optlist = NULL;
     double throughput = 0;
-    //send_duration = esp_timer_get_time();
 
     if (!(request = coap_new_pdu(COAP_MESSAGE_NON,COAP_REQUEST_CODE_PUT, session))) {  
         ESP_LOGE(TAG, "coap_new_pdu() failed");
@@ -770,8 +773,6 @@ void send_delay(coap_session_t *session, int64_t *tick) {
     coap_add_option(request, COAP_OPTION_URI_PATH, 5, (uint8_t *)delay_path);
     double d = (double)send_duration/(1000*1000);
     throughput = image->len / d;
-  
-    // throughput = ((double*)image->len)/((double*)send_duration);
     
     coap_add_data_large_request(session,request, sizeof(throughput),(uint8_t *)&throughput , NULL, NULL);
     coap_send(session, request);
@@ -794,8 +795,9 @@ void send_image(coap_session_t *session, int64_t *tick) {
     payload.s = NULL; 
 
     coap_optlist_t *optlist = NULL;
-
+    coba_duration = esp_timer_get_time();
     image = camera_capture();
+    coba_duration = esp_timer_get_time() - coba_duration;
 
     if (!image) {
         coap_log(LOG_NOTICE, "Take image failed!\n");
@@ -804,9 +806,10 @@ void send_image(coap_session_t *session, int64_t *tick) {
 
     payload.s = image->buf;
     payload.length = image->len;
-
-    send_duration = esp_timer_get_time();
-    coap_log(LOG_NOTICE, "Start sending image, start tick %lld\n", send_duration);
+   
+    coap_log(LOG_NOTICE, "Take image success\n");
+    //send_duration = esp_timer_get_time();
+    //coap_log(LOG_NOTICE, "Start sending image, start tick %lld\n", send_duration);
 
     if (!(request = coap_new_pdu(COAP_MESSAGE_CON,COAP_REQUEST_CODE_PUT, session))) {  
         ESP_LOGE(TAG, "coap_new_pdu() failed");
