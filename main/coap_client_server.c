@@ -34,7 +34,8 @@ const static char *TAG = "CoAP_server_client";
 
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
 #define size_of_list_frame 12
-const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
+const char *server_uri = "coap://192.168.100.4"; // alamat server coap Raspi Rumah Sean
+//const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
 //const char *server_uri = "coap://192.168.9.4"; // alamat server coap TP LINK
 static unsigned char _token_data[8];
 coap_binary_t base_token = { 0, _token_data };
@@ -356,7 +357,7 @@ void coap_client_server(void *p) {
                 send_image(session_image, &tick_send_image);
                 //printf("increment : %d\n",increment);
                 
-                //get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
+                get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
             }        
             wait_ms = 60000;
             // coba_duration = esp_timer_get_time();
@@ -390,7 +391,7 @@ void change_dynamic_parameter(char* dynamic_value) {
         sensor_t *s = esp_camera_sensor_get();
         int tp = atoi(dynamic_value);
         float sizeAllowed = tp/frameRate;
-       
+
         int min_size = 1700;
         int max_size = 30000;
         int kons = 921600 - 9216;
@@ -405,10 +406,16 @@ void change_dynamic_parameter(char* dynamic_value) {
             break;
           }
         }
-        s->set_framesize(s, output_expected);
-        //printf("Change image frame to : %d\n", output_expected);
-        //printf("frame_size now: %d\n", s->status.framesize);
-    
+        coba_duration = esp_timer_get_time();
+        int status_frame_size = s->status.framesize;
+        printf("frame_size before: %d\n", status_frame_size);
+        if (output_expected != status_frame_size){
+           s->set_framesize(s, output_expected);
+        }
+         coba_duration = esp_timer_get_time() - coba_duration;
+         printf("time : %lld\n",coba_duration);
+         printf("Change image frame to : %d\n", output_expected);
+         printf("frame_size now: %d\n", s->status.framesize);
 }
 
 static coap_response_t client_response_handler(coap_session_t *session,
@@ -795,9 +802,9 @@ void send_image(coap_session_t *session, int64_t *tick) {
     payload.s = NULL; 
 
     coap_optlist_t *optlist = NULL;
-    coba_duration = esp_timer_get_time();
+    //coba_duration = esp_timer_get_time();
     image = camera_capture();
-    coba_duration = esp_timer_get_time() - coba_duration;
+   //  coba_duration = esp_timer_get_time() - coba_duration;
 
     if (!image) {
         coap_log(LOG_NOTICE, "Take image failed!\n");
