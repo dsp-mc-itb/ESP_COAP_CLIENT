@@ -34,8 +34,9 @@ const static char *TAG = "CoAP_server_client";
 
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
 #define size_of_list_frame 12
-const char *server_uri = "coap://192.168.100.4"; // alamat server coap Raspi Rumah Sean
-//const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
+//const char *server_uri = "coap://192.168.100.4"; // alamat server coap Raspi Rumah Sean
+// const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
+const char *server_uri = "coap://10.0.0.14"; // alamat server coap Raspi TP-Link_AC44
 //const char *server_uri = "coap://192.168.9.4"; // alamat server coap TP LINK
 static unsigned char _token_data[8];
 coap_binary_t base_token = { 0, _token_data };
@@ -75,8 +76,10 @@ unsigned int obs_seconds = 30;
 int obs_started = 0;
 int doing_observe = 0;
 static int is_mcast = 0;
-static int frameRate = 5;
+static int frameRate = 7;
 camera_fb_t *image = NULL;
+
+int ii = 0;
 
 coap_context_t *ctx = NULL;
 
@@ -347,7 +350,7 @@ void coap_client_server(void *p) {
     //prepare_device_monitor_session(&session_device, &tick_device_monitor);
     prepare_session(ctx,&session_image, &tick_send_image); 
     prepare_session(ctx,&session_tp, &tick_get_throughput_prediction);
-    prepare_session(ctx,&session_delay, &tick_put_delay);
+    //prepare_session(ctx,&session_delay, &tick_put_delay);
     //int increment = 0;
     while (1) {
         if (is_connected) {
@@ -375,7 +378,7 @@ void coap_client_server(void *p) {
                 }
             }
             esp_camera_fb_return(image);
-           
+            vTaskDelay(10 / portTICK_RATE_MS);
             //send_delay(session_delay, &tick_put_delay);
             
             
@@ -408,14 +411,14 @@ void change_dynamic_parameter(char* dynamic_value) {
         }
         coba_duration = esp_timer_get_time();
         int status_frame_size = s->status.framesize;
-        printf("frame_size before: %d\n", status_frame_size);
+        //printf("frame_size before: %d\n", status_frame_size);
         if (output_expected != status_frame_size){
            s->set_framesize(s, output_expected);
         }
          coba_duration = esp_timer_get_time() - coba_duration;
-         printf("time : %lld\n",coba_duration);
-         printf("Change image frame to : %d\n", output_expected);
-         printf("frame_size now: %d\n", s->status.framesize);
+         //printf("time : %lld\n",coba_duration);
+         printf("Change image frame to : %d time : %lld\n", output_expected,coba_duration);
+         //printf("frame_size now: %d\n", s->status.framesize);
 }
 
 static coap_response_t client_response_handler(coap_session_t *session,
@@ -462,18 +465,11 @@ static coap_response_t client_response_handler(coap_session_t *session,
   block_opt = coap_check_option(received, COAP_OPTION_URI_PATH, &opt_iter);
 
   if (COAP_RESPONSE_CLASS(rcv_code) == 2) {
-
-    if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
-    
-    } else if (strncmp((const char*)uriPath->s,"image",5) == 0){ //handle image
-      image_resp_wait = 0;
-    } else {
-      image_resp_wait = 0;
-    }
     
     /* set obs timer if we have successfully subscribed a resource */
     if (doing_observe && !obs_started &&
     coap_check_option(received, COAP_OPTION_OBSERVE, &opt_iter)) {
+      
       coap_log(LOG_DEBUG,
           "observation relationship established, set timeout to %d\n",
           obs_seconds);
@@ -481,15 +477,17 @@ static coap_response_t client_response_handler(coap_session_t *session,
       obs_ms = obs_seconds * 1000;
       obs_ms_reset = 1;
     }
-
+    
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
       if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
       //doing something
       //printf("len asli: %d\n",len);
       char data[8];
       strncpy(data, (char *)databuf, len);
+    
       //printf("Prediction asli : %s\n",data);
       change_dynamic_parameter(data);
+      
       //printf("EXit\n");
       }   
     }
@@ -497,7 +495,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
     /* Check if Block2 option is set */
     block_opt = coap_check_option(received, COAP_OPTION_BLOCK2, &opt_iter);
     if (!single_block_requested && block_opt) { /* handle Block2 */
-
+    
       /* TODO: check if we are looking at the correct block number */
       if (coap_opt_block_num(block_opt) == 0) {
         /* See if observe is set in first response */
@@ -514,6 +512,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
         doing_getting_block = 0;
         track_flush_token(&token);
       }
+      
       return COAP_RESPONSE_OK;
     }
   } else {      /* no 2.05 */
@@ -539,6 +538,18 @@ static coap_response_t client_response_handler(coap_session_t *session,
   /* our job is done, we can exit at any time */
   ready = doing_observe ? coap_check_option(received,
                                   COAP_OPTION_OBSERVE, &opt_iter) == NULL : 1;
+  if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
+
+    } else if (strncmp((const char*)uriPath->s,"image",5) == 0){ //handle image
+      
+      image_resp_wait = 0;
+      
+    } else {
+      printf("Image receive No %d\n",ii);
+      ii++;
+      image_resp_wait = 0;
+    }
+  
   return COAP_RESPONSE_OK;
 }
 
