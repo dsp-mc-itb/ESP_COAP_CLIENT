@@ -378,7 +378,7 @@ void coap_client_server(void *p) {
                 }
             }
             esp_camera_fb_return(image);
-            vTaskDelay(10 / portTICK_RATE_MS);
+            vTaskDelay(10 / portTICK_RATE_MS); //10
             //send_delay(session_delay, &tick_put_delay);
             
             
@@ -419,6 +419,7 @@ void change_dynamic_parameter(char* dynamic_value) {
          //printf("time : %lld\n",coba_duration);
          printf("Change image frame to : %d time : %lld\n", output_expected,coba_duration);
          //printf("frame_size now: %d\n", s->status.framesize);
+         return;
 }
 
 static coap_response_t client_response_handler(coap_session_t *session,
@@ -479,6 +480,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
     }
     
     if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
+      printf("dapet th pred\n");
       if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
       //doing something
       //printf("len asli: %d\n",len);
@@ -494,8 +496,9 @@ static coap_response_t client_response_handler(coap_session_t *session,
 
     /* Check if Block2 option is set */
     block_opt = coap_check_option(received, COAP_OPTION_BLOCK2, &opt_iter);
-    if (!single_block_requested && block_opt) { /* handle Block2 */
     
+    if (!single_block_requested && block_opt) { /* handle Block2 */
+    printf("not single\n");
       /* TODO: check if we are looking at the correct block number */
       if (coap_opt_block_num(block_opt) == 0) {
         /* See if observe is set in first response */
@@ -503,7 +506,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
                                   COAP_OPTION_OBSERVE, &opt_iter) == NULL : 1;
       }
       if(COAP_OPT_BLOCK_MORE(block_opt)) {
-        
+          
         wait_ms = 60 * 1000;
         wait_ms_reset = 1;
         doing_getting_block = 1;
@@ -518,6 +521,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
   } else {      /* no 2.05 */
     /* check if an error was signaled and output payload if so */
     if (COAP_RESPONSE_CLASS(rcv_code) >= 4) {
+      printf("dapet th pred2\n");
       fprintf(stderr, "err %d.%02d", COAP_RESPONSE_CLASS(rcv_code),
               rcv_code & 0x1F);
       if (coap_get_data_large(received, &len, &databuf, &offset, &total)) {
@@ -539,13 +543,14 @@ static coap_response_t client_response_handler(coap_session_t *session,
   ready = doing_observe ? coap_check_option(received,
                                   COAP_OPTION_OBSERVE, &opt_iter) == NULL : 1;
   if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
-
+      printf("dapet th pred3\n");
     } else if (strncmp((const char*)uriPath->s,"image",5) == 0){ //handle image
       
       image_resp_wait = 0;
       
     } else {
-      printf("Image receive No %d\n",ii);
+      //printf("Image receive No %d\n",ii);
+
       ii++;
       image_resp_wait = 0;
     }
@@ -856,11 +861,12 @@ clean_up:
 
 void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
     
-    uint8_t token[8];
-    size_t tokenlen; 
-    coap_pdu_t *pdu = NULL;
-    
     if (esp_timer_get_time() - *tick > 5000000) {
+      uint8_t token[8];
+      size_t tokenlen; 
+      coap_pdu_t *pdu = NULL;
+    
+    
         *tick = esp_timer_get_time();
        
         pdu = coap_new_pdu(COAP_MESSAGE_CON,COAP_REQUEST_CODE_GET, session);
@@ -878,6 +884,8 @@ void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
         image_resp_wait = 1;
         coap_send(session, pdu);
 
+    } else {
+      return;
     }
 }
 
