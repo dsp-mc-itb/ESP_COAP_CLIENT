@@ -259,7 +259,11 @@ static esp_err_t wifi_event_handler(void* ctx, system_event_t* event) {
 void get_global_config_from_nvs() {
     esp_err_t err;
     size_t size;
-
+    // get_config_param_int("size_HD", &size_HD);
+    // if (size_HD == NULL) {
+        
+        
+    // }
     err = get_config_param_str("ssid", &ssid);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         ssid = ESP_DEFAULT_SSID;
