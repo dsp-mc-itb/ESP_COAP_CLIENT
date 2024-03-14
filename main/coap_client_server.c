@@ -34,9 +34,9 @@ const static char *TAG = "CoAP_server_client";
 
 #define CONTROLLER_ADDRESS 251658250 /* 10.0.0.15 but in integer */
 #define size_of_list_frame 12
-//const char *server_uri = "coap://192.168.100.4"; // alamat server coap Raspi Rumah Sean
+// const char *server_uri = "coap://192.168.100.8"; // alamat server coap Raspi Rumah Sean
 // const char *server_uri = "coap://192.168.1.113"; // alamat server coap Raspi dd-wrt
-const char *server_uri = "coap://10.0.0.14"; // alamat server coap Raspi TP-Link_AC44
+const char *server_uri = "coap://10.0.0.2"; // alamat server coap Raspi TP-Link_AC44
 //const char *server_uri = "coap://192.168.9.4"; // alamat server coap TP LINK
 static unsigned char _token_data[8];
 coap_binary_t base_token = { 0, _token_data };
@@ -53,6 +53,20 @@ static int wait_ms;
 
 static coap_string_t payload = {0, NULL}; /* optional payload to send */
 int list_of_frame[size_of_list_frame] = {9216,19200,25344,42240,57600,76800,118400,153600,307200,480000,786432,921600};
+// 96x96
+//     FRAMESIZE_QQVGA,    // 160x120
+//     FRAMESIZE_QCIF,     // 176x144
+//     FRAMESIZE_HQVGA,    // 240x176
+//     FRAMESIZE_240X240,  // 240x240
+//     FRAMESIZE_QVGA,     // 320x240
+//     FRAMESIZE_CIF,      // 400x296
+//     FRAMESIZE_HVGA,     // 480x320
+//     FRAMESIZE_VGA,      // 640x480
+//     FRAMESIZE_SVGA,     // 800x600
+//     FRAMESIZE_XGA,      // 1024x768
+//     FRAMESIZE_HD,       // 1280x720
+//     FRAMESIZE_SXGA,     // 1280x1024
+//     FRAMESIZE_UXGA,     // 1600x1200
 typedef unsigned char method_t;
 
 coap_block_mod_t block = {.num = 0, .m = 0, .szx = 6, .part_len = 10};
@@ -78,7 +92,9 @@ int doing_observe = 0;
 static int is_mcast = 0;
 static int frameRate = 5; 
 camera_fb_t *image = NULL;
-int size_HD = 0;
+static int size_HD = 0;
+static int size_known = 0;
+static int pixel_known = 0;
 
 int ii = 0;
 
@@ -336,10 +352,13 @@ void coap_client_server(void *p) {
       payload.length = image->len;     
       if ((payload.length < size_HD) || (size_HD == 0)){
         size_HD = payload.length;
+        size_known = size_HD;
+        pixel_known = image->height * image->width;
       } 
       esp_camera_fb_return(image);
       vTaskDelay(1 * 200 / portTICK_RATE_MS);
     }
+    printf("Size HD = %d\n",size_HD);
     /*INITIATE COAP */
     coap_startup();
     coap_set_log_level(COAP_LOG_DEFAULT_LEVEL);
@@ -377,9 +396,12 @@ void coap_client_server(void *p) {
                 //printf("increment : %d\n",increment);
                 
                 get_throughput_prediction(session_tp, &tick_get_throughput_prediction);
+                
             }        
             wait_ms = 60000;
             // coba_duration = esp_timer_get_time();
+            coba_duration3 = esp_timer_get_time();
+    
             while (image_resp_wait) {
 
                 int result = coap_io_process(ctx, wait_ms > 400 ? 400 : wait_ms);
@@ -393,7 +415,17 @@ void coap_client_server(void *p) {
                     }
                 }
             }
+            coba_duration3 = esp_timer_get_time() - coba_duration3;   
+            //printf("send TIME : %lld", coba_duration3);
+            if (coba_duration3 > 1000000){
+              //printf(" WARNING\n");
+            } else {
+              //printf("\n");
+            }
+            coba_duration3 = esp_timer_get_time();
             esp_camera_fb_return(image);
+            coba_duration3 = esp_timer_get_time() - coba_duration3;      
+            //printf("send TIME 2: %lld\n", coba_duration3);
             vTaskDelay(10 / portTICK_RATE_MS); //10
             //send_delay(session_delay, &tick_put_delay);
             
@@ -405,28 +437,75 @@ void coap_client_server(void *p) {
     }
 }
 
+double estimate(double px, int known_size, int known_pixel) {
+    const int smallest_size = 709;
+    const int smallest_px = 144;
+    const int largest_size = 921600;
+
+    double kalkulasi_final;
+    long double beta = (known_size - smallest_size) * smallest_px / (known_pixel - smallest_px);
+    kalkulasi_final = ((known_size - smallest_size) * px / (known_pixel - smallest_px)) + smallest_size - beta;
+    return kalkulasi_final;
+}
+
+/**
+ * @brief Calculates the gain based on pixel information.
+ * 
+ * @param pxa Pixel to calculate the gain for.
+ * @return Calculated gain.
+ */
+double gain(long int pxa) {
+    if (pxa < 9000) {
+        return 100;
+    } else {
+        double px = (double)pxa / 100;
+        return -0.0103615 * px + 0.000000627629935 * px * px + 144.7392694;
+    }
+}
+
 void change_dynamic_parameter(char* dynamic_value) {
     
         sensor_t *s = esp_camera_sensor_get();
         int tp = atoi(dynamic_value);
         float sizeAllowed = tp/frameRate;
-
-        int min_size = 1700;
-        int max_size = size_HD;
-        int kons = 921600 - 9216;
-        float beta = min_size - (max_size-min_size)*9216/kons;
-        float x = (sizeAllowed - beta)*kons/(max_size-min_size);
-        int i = 0;
         int output_expected = 0;
-        for (i = size_of_list_frame -1; i >=0; i--){
-          if (x > list_of_frame[i]) {
+        // ================== TYPE VERSI 1 =================
+        // int min_size = 1700;
+        // int max_size = size_HD;
+        // int kons = 921600 - 9216;
+        // float beta = min_size - (max_size-min_size)*9216/kons;
+        // float x = (sizeAllowed - beta)*kons/(max_size-min_size);
+        // int i = 0;
+        // printf("SIZE ALLOW : %f ,, X = %f\n",sizeAllowed,x);
+        // int output_expected = 0;
+        // ================== TYPE VERSI 1 =================
+
+        // ================== TYPE VERSI 2 =================
+        for (int i = 11; i >=0 ; i--) {
+          // printf("%d",i);
+          double kalkulasi_final = estimate(list_of_frame[i], size_known, pixel_known);
+          double with_desired_gain = gain(list_of_frame[i]) - (gain(pixel_known) - 100);
+          // printf("With desired gain: %f\n", with_desired_gain);
+          kalkulasi_final *= with_desired_gain / 100;
+          // printf("kalkulasi final : %f\n",kalkulasi_final);
+          // printf("available bandwidth : %f\n",sizeAllowed);
+          if (kalkulasi_final <= sizeAllowed){
             output_expected = i;
             break;
           }
         }
+    
+        // ================== TYPE VERSI 2 =================
+
+        // for (int i = size_of_list_frame -1; i >=0; i--){
+        //   if (x > list_of_frame[i]) {
+        //     output_expected = i;
+        //     break;
+        //   }
+        // }
         coba_duration = esp_timer_get_time();
         int status_frame_size = s->status.framesize;
-        //printf("frame_size before: %d\n", status_frame_size);
+        printf("frame_size before: %d\n", status_frame_size);
         if (output_expected != status_frame_size){
            s->set_framesize(s, output_expected);
         }
@@ -499,7 +578,11 @@ static coap_response_t client_response_handler(coap_session_t *session,
       if (strncmp((const char*)uriPath->s,"troug",5) == 0){ //handle troug
         char data[8];
         strncpy(data, (char *)databuf, len);
+        coba_duration2 = esp_timer_get_time();
         change_dynamic_parameter(data);
+        coba_duration2 = esp_timer_get_time() - coba_duration2;
+        
+        printf("GET TP time : %lld\n", coba_duration2);
       }   
     }
 
@@ -558,7 +641,7 @@ static coap_response_t client_response_handler(coap_session_t *session,
     } else {
       //printf("Image receive No %d\n",ii);
 
-      ii++;
+      //ii++;
       image_resp_wait = 0;
     }
   
@@ -836,7 +919,11 @@ void send_image(coap_session_t *session, int64_t *tick) {
 
     payload.s = image->buf;
     payload.length = image->len;
-   
+    size_known = image->len;
+    pixel_known = image->width * image->height;
+
+    printf("size kwno : %d\n",size_known);
+    printf("px kwno : %d\n",pixel_known);
     coap_log(LOG_NOTICE, "Take image success\n");
     //send_duration = esp_timer_get_time();
     //coap_log(LOG_NOTICE, "Start sending image, start tick %lld\n", send_duration);
@@ -850,8 +937,12 @@ void send_image(coap_session_t *session, int64_t *tick) {
     if (!coap_add_token(request, tokenlen, token)) {
         coap_log(LOG_DEBUG, "cannot add token to request\n");
     }
-
+    
+    int intValue = pixel_known; // Replace 123 with your actual integer value
+    
+    coap_add_option(request, 65002, sizeof(intValue),(uint8_t*)&intValue);
     coap_add_option(request, COAP_OPTION_URI_PATH, 5, (uint8_t *)image_path);
+   
     coap_add_data_large_request(session,request, payload.length, payload.s, NULL, NULL);
     
     image_resp_wait = 1;
@@ -868,7 +959,7 @@ clean_up:
 
 void get_throughput_prediction(coap_session_t *session, int64_t *tick) {
     
-    if (esp_timer_get_time() - *tick > 5000000) { //5000000
+    if (esp_timer_get_time() - *tick > 4000000) { //5000000
       uint8_t token[8];
       size_t tokenlen; 
       coap_pdu_t *pdu = NULL;

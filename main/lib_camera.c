@@ -86,8 +86,8 @@ esp_err_t camera_init_default() {
     // config.frame_size = FRAMESIZE_96X96;
     // config.frame_size = FRAMESIZE_VGA;
     config.frame_size = FRAMESIZE_UXGA;
-    config.jpeg_quality = 15;
-    config.fb_count = 2; // 1,2,3 dst
+    config.jpeg_quality = 15; //0-63
+    config.fb_count = 2; // 1,2,3 dstya e
     config.grab_mode = CAMERA_GRAB_LATEST;
     //config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_location = CAMERA_FB_IN_PSRAM;
